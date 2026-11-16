@@ -15,7 +15,7 @@ func TestParseConsoleReply(t *testing.T) {
 	}{
 		{"ver", "ver\r\n  -> v1.12.0 (Build: x)\r\n", []string{"v1.12.0 (Build: x)"}},
 		{"neighbors", "neighbors\r\n  -> 4a5e:100:20\r\n9c1f:200:8\r\n", []string{"4a5e:100:20", "9c1f:200:8"}},
-		{"log", "log\r\nline one\r\nline two\r\n  ->    EOF\r\n", []string{"line one", "line two", "  ->    EOF"}},
+		{"log", "log\r\nline one\r\nline two\r\n  ->    EOF\r\n", []string{"line one", "line two", "   EOF"}},
 		{"reboot", "reboot\r\n", nil},
 		{"ver", "  -> v1\r\n", []string{"v1"}}, // no echo
 	} {
@@ -75,7 +75,7 @@ func TestConsoleRun(t *testing.T) {
 		t.Errorf("ver: %q, %v", got, err)
 	}
 	got, err = c.Run("log", 5*time.Second)
-	if err != nil || strings.Join(got, "|") != "a|b|  ->    EOF" {
+	if err != nil || strings.Join(got, "|") != "a|b|   EOF" {
 		t.Errorf("log: %q, %v", got, err)
 	}
 	start := time.Now()

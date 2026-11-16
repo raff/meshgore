@@ -102,7 +102,8 @@ The console has no prompt or reply marker, so a reply ends after about 0.6 s of
 silence; a command that never answers (`reboot`) takes 3 s. `reboot` waits for the
 port to come back (`-reconnect-wait`). Tried on a Seeed SenseCAP Solar repeater
 (v1.18.0): `ver`, `board`, `get name`, `neighbors` and the three `stats-*` commands work
-(the `stats-*` replies are JSON). `reboot` works (the port comes back and later commands run).
+(the `stats-*` replies are JSON), and `log` returns the whole captured log ending in
+`EOF`. Each `log` call dumps the full log again; it does not clear it. `reboot` works (the port comes back and later commands run).
 
 ## Usage
 

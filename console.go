@@ -157,11 +157,10 @@ func parseConsoleReply(command string, raw []byte) []string {
 		lines = lines[1:]
 	}
 	var out []string
-	for i, l := range lines {
-		if i == 0 {
-			l = strings.TrimPrefix(l, consolePrefix)
-		}
-		out = append(out, l)
+	// The prefix comes before the node's own reply text, which can follow output
+	// the node printed directly (a "log" dump ends with a prefixed "EOF" line).
+	for _, l := range lines {
+		out = append(out, strings.TrimPrefix(l, consolePrefix))
 	}
 	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
 		out = out[:len(out)-1]

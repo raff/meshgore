@@ -102,11 +102,11 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
      `go.bug.st/serial` needs anything on Linux and Windows.
    - A node running both interfaces answers on both.
    **Repeater console over serial: works** (`console.go`, `-serial-cli`; tried on a
-   SenseCAP Solar repeater, v1.18.0: `ver`, `board`, `get name`, `neighbors`, `stats-*`, `reboot` with reconnect). From the firmware source: 115200 baud, a command is a line ending
+   SenseCAP Solar repeater, v1.18.0: `ver`, `board`, `get name`, `neighbors`, `stats-*`, `log`, `reboot` with reconnect). From the firmware source: 115200 baud, a command is a line ending
    in CR (a bare LF does nothing), input is echoed, the reply is `  -> <text>`, there is
    no prompt, and `stats-*`, `log`, `erase` and `get prv.key` work on serial only. Still to check:
-   the 600 ms quiet window against a long reply (the repeater's log was empty, so `log`
-   only returned `EOF`; try after `log start`), a room server (it
+   a much longer `log` dump (a 79-line one came back complete);
+   a room server (it
    also echoes LF),.
    `-status`, `-watch`, `-csv` and the alert thresholds work over the console (they use
    the three JSON `stats-*` commands).
