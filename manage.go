@@ -2,6 +2,7 @@ package meshgore
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -199,4 +200,105 @@ func (c *Client) Discover(types byte, wait time.Duration) ([]*Neighbor, error) {
 			return out, nil
 		}
 	}
+}
+
+// The default flood scope: a region name that every flood packet this node sends is tagged with
+// (adverts, direct messages and logins whose path is unknown, channel messages), so repeaters
+// that have that region forward it. A repeater with regions set up does not forward a scoped
+// flood whose region it does not have.
+const (
+	cmdSetDefaultScope = 0x3F
+	cmdGetDefaultScope = 0x40
+	respDefaultScope   = 0x1C
+
+	// MaxScopeName is the longest region name, in bytes (the blog says 29; the firmware keeps 30).
+	MaxScopeName   = 29
+	scopeNameField = 31 // the name field of the frames, NUL padded
+)
+
+// FloodScope is a node's default flood scope.
+type FloodScope struct {
+	Set  bool
+	Name string   // without the leading '#'
+	Key  [16]byte // the transport key the firmware tags packets with
+}
+
+// ScopeKey is the transport key of a region: the first 16 bytes of the SHA-256 of "#" and the name
+// (the '#' is only added internally; names are written without it).
+func ScopeKey(name string) (key [16]byte) {
+	sum := sha256.Sum256([]byte("#" + name))
+	copy(key[:], sum[:16])
+	return key
+}
+
+// ValidScopeName reports whether name is a usable region name: lowercase letters, digits and '-',
+// at most 29 bytes.
+func ValidScopeName(name string) error {
+	if name == "" || len(name) > MaxScopeName {
+		return fmt.Errorf("a region name is 1 to %d characters", MaxScopeName)
+	}
+	for _, r := range name {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return fmt.Errorf("region name %q: only lowercase letters, digits and '-' (no '#')", name)
+		}
+	}
+	return nil
+}
+
+func buildSetScope(name string) ([]byte, error) {
+	if err := ValidScopeName(name); err != nil {
+		return nil, err
+	}
+	cmd := make([]byte, 1+scopeNameField+16)
+	cmd[0] = cmdSetDefaultScope
+	copy(cmd[1:], name)
+	key := ScopeKey(name)
+	copy(cmd[1+scopeNameField:], key[:])
+	return cmd, nil
+}
+
+func parseScope(f []byte) (FloodScope, error) {
+	if len(f) == 1 { // just the code: no scope
+		return FloodScope{}, nil
+	}
+	if len(f) < 1+scopeNameField+16 {
+		return FloodScope{}, fmt.Errorf("DEFAULT_FLOOD_SCOPE too short: %d bytes", len(f))
+	}
+	sc := FloodScope{Set: true, Name: cstr(f[1 : 1+scopeNameField])}
+	copy(sc.Key[:], f[1+scopeNameField:])
+	if sc.Name == "" {
+		return FloodScope{}, nil
+	}
+	return sc, nil
+}
+
+// DefaultScope reads the node's default flood scope.
+func (c *Client) DefaultScope() (FloodScope, error) {
+	f, err := c.Do([]byte{cmdGetDefaultScope}, respDefaultScope)
+	if err != nil {
+		return FloodScope{}, fmt.Errorf("GET_DEFAULT_FLOOD_SCOPE: %w", err)
+	}
+	return parseScope(f)
+}
+
+// SetDefaultScope sets the default flood scope to the region name. Make sure the repeaters you rely
+// on have that region, or they will not forward what this node sends.
+func (c *Client) SetDefaultScope(name string) error {
+	cmd, err := buildSetScope(name)
+	if err != nil {
+		return fmt.Errorf("SET_DEFAULT_FLOOD_SCOPE: %w", err)
+	}
+	if _, err := c.Do(cmd, respOK); err != nil {
+		return fmt.Errorf("SET_DEFAULT_FLOOD_SCOPE: %w", err)
+	}
+	return nil
+}
+
+// ClearDefaultScope removes the default flood scope, so floods go out unscoped again. The firmware
+// clears it when the frame is shorter than a full one.
+func (c *Client) ClearDefaultScope() error {
+	if _, err := c.Do([]byte{cmdSetDefaultScope, 0}, respOK); err != nil {
+		return fmt.Errorf("SET_DEFAULT_FLOOD_SCOPE: %w", err)
+	}
+	return nil
 }

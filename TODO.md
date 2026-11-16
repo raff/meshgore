@@ -13,8 +13,8 @@ An item counts as done only after a run against a real node.
    real frames first.
 2. **Companion commands not used yet.** From the firmware's command list; `meshcore_py` uses the
    same numbers. Layouts are not checked, so confirm them in the firmware source before building:
-   - `0x3F`/`0x40` (63/64) default flood scope set/get, and `0x36` (54) flood scope key: the
-     repeater's `region default` / `region home`.
+   - `0x36` (54) a flood scope key for the next sends, in RAM only (a per-send override of the default
+     scope; sub-mode 1 forces unscoped). The default scope itself (63/64) is done as `scope`.
    - `0x3C` (60) allowed repeat frequencies (read): which frequencies may use the "repeat"
      option of `SET_RADIO_PARAMS`.
    - `0x3E` (62) data on a channel, `0x41` (65) a raw packet, `0x39` (57) an anonymous request,
@@ -182,6 +182,23 @@ A way forward would be to propose a custom variable (for example `buzzer` and `v
 `CMD_SET_CUSTOM_VAR` to MeshCore; `vars` and `cli` would then work with no change here. Re-check
 with `mc vars` after firmware updates.
 
+### Why the Bay Area healthcheck did not hear the nodes
+
+Measured with the repeater indoors, then outside (not very high):
+- Companion to repeater was fine: +13 dB, relayed one second later (repeater log).
+- Indoors, the repeater heard the rest of the mesh only at the edge: 15 of 16 packets at -6 to -8 dB SNR
+  (SF7 stops decoding near -7.5 dB), noise floor -112 dBm against -119 dBm at the companion.
+- Outside: noise floor -119/-120 dBm, about 17 packets/min received against about 5 indoors, and 55%
+  of them duplicates (the same flood heard from several repeaters; indoors it was about none).
+  The counts are rough: different times of day, and the indoor figure is an average over two hours.
+- Everything heard was a plain (unscoped) flood, so a scope requirement does not look like the cause.
+  The Bay Area healthcheck site refuses automated fetches (403), so what its observers require is
+  unconfirmed. The next check is a fresh healthcheck code from that page sent with `mc healthcheck`.
+- Region scope, from the MeshCore blog (Jan and Apr 2026): repeaters since v1.10.0 do not forward a
+  scoped flood for a region they do not have; `region denyf *` makes a repeater refuse unscoped floods
+  ("not advised at this stage"); the default scope is a v1.15.0 feature. Region names are lowercase
+  letters, digits and `-`, matched exactly (the list is flat, there is no inheritance).
+
 ### Protocol differences seen
 
 `meshcore_py` sends the TX power as a 4-byte integer where the firmware reads one signed byte, and
@@ -192,6 +209,7 @@ with `mc vars` after firmware updates.
 
 - Bluetooth scan (by service UUID or prefix, with a timeout), pairing retry, reconnect with backoff
 - Handshake, node and device info, channels, contacts with an incremental on-disk cache, messages
+- `scope`: the default flood scope (a region name and its key, SHA-256 of `#`+name)
 - Direct messages with acknowledgement, retry and path reset; `send` (refuses over 133 bytes);
   `healthcheck`; the contact
   list with type, name and age filters, sorting and JSON

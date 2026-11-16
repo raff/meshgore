@@ -331,6 +331,23 @@ Needs a build with GPS; `vars` shows a `gps` variable if there is one. The
 T1000-E on v1.18.0 has `gps` but rejects `gps_interval` (`ILLEGAL_ARG`), so
 `-interval` works only on builds that list that variable.
 
+### Flood scope (regions)
+
+```
+./mc -name=MyNode scope                  # show
+./mc -name=MyNode scope set bay-area     # tag every flood this node sends with the region "bay-area"
+./mc -name=MyNode scope clear            # back to unscoped floods
+```
+
+A region is a lowercase name (letters, digits and `-`, no `#`, up to 29 bytes). With a default scope
+set, the node tags all its floods (adverts, direct messages and logins whose path is unknown, channel
+messages) with it, and a repeater that has regions configured forwards a scoped flood only if it has
+that region. **Check the repeaters you rely on before setting one**: your own repeater needs
+`region put <name>` (and, on firmware before 1.15, `region allowf <name>`), or it will stop
+forwarding what your companion sends. By default a node sends unscoped floods, which every repeater
+forwards unless it has been told (`region denyf *`) to refuse them. Needs a firmware with the
+default-scope commands (the T1000-E on v1.18.0 and the T-Deck on wadamesh v27 have them).
+
 ### Advertise the companion
 
 ```
@@ -523,7 +540,7 @@ Options come before the command.
 | Command | What it does |
 | --- | --- |
 | `info`, `vars`, `status`, `watch`, `telemetry` | look at the node |
-| `clock`, `radio`, `tuning`, `gps`, `advert`, `set`, `auto-add`, `path-hash` | read or change its settings |
+| `clock`, `radio`, `tuning`, `gps`, `advert`, `set`, `auto-add`, `path-hash`, `scope` | read or change its settings |
 | `messages`, `dm`, `send`, `healthcheck` | messages |
 | `contacts`, `contact`, `channels`, `channel` | contacts and channels |
 | `discover`, `repeater`, `cli` | the network, a repeater, a CLI command on the node |

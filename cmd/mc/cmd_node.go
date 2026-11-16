@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/raff/meshgore"
 )
 
 // newActions returns node actions with nothing asked for. The zero values of some
@@ -42,6 +44,7 @@ func init() {
 		&command{"gps", "Node", "[on|off] [-interval SECONDS]", "show the GPS state, switch it, or set the update interval", cmdGPS},
 		&command{"advert", "Node", "[flood|zerohop]", "make the node advertise itself", cmdAdvert},
 		&command{"set", "Node", "name|position|share-location|multi-acks VALUE", "change the name, advertised position, location sharing or multi-acks", cmdSet},
+		&command{"scope", "Node", "[set REGION | clear]", "show, set or clear the default flood scope (the region every flood is tagged with)", cmdScope},
 		&command{"auto-add", "Node", "[-overwrite on|off] [-max-hops N] [show|all|none|TYPES]", "which adverts become contacts (types: chat,repeater,room,sensor)", cmdAutoAdd},
 		&command{"path-hash", "Node", "[0|1|2]", "show or set the hash size in flood packets (mode+1 bytes)", cmdPathHash},
 	)
@@ -316,4 +319,55 @@ func cmdPathHash(s *session, args []string) int {
 	a := newActions(s)
 	a.pathHash = rest[0]
 	return withCompanion(s, a)
+}
+
+func cmdScope(s *session, args []string) int {
+	fs := newFlags("scope", "[set REGION | clear]")
+	rest, code, ok := parseFlags(fs, args)
+	if !ok {
+		return code
+	}
+	var region string
+	clear := false
+	switch {
+	case len(rest) == 0:
+	case len(rest) == 1 && rest[0] == "clear":
+		clear = true
+	case len(rest) == 2 && rest[0] == "set":
+		region = rest[1]
+		if err := meshgore.ValidScopeName(region); err != nil {
+			return usageError(fs, "%v", err)
+		}
+	default:
+		return usageError(fs, "wants nothing, set REGION or clear")
+	}
+	l := s.companion()
+	if l == nil {
+		return exitFail
+	}
+	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
+	switch {
+	case clear:
+		if err := l.Client.ClearDefaultScope(); err != nil {
+			return fail(err)
+		}
+	case region != "":
+		if err := l.Client.SetDefaultScope(region); err != nil {
+			return fail(err)
+		}
+	}
+	sc, err := l.Client.DefaultScope()
+	if err != nil {
+		return fail(err)
+	}
+	switch {
+	case !sc.Set:
+		fmt.Println("default flood scope: none (floods go out unscoped)")
+	default:
+		fmt.Printf("default flood scope: %s (key %x)\n", sc.Name, sc.Key)
+		if region != "" {
+			fmt.Println("Repeaters forward a scoped flood only if they have that region (region put " + sc.Name + " on a repeater). Check yours before relying on it.")
+		}
+	}
+	return exitOK
 }
