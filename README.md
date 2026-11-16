@@ -74,8 +74,8 @@ including `-cmd=reboot`, which waits for the port to come back.
 The node must run a build with its USB serial interface enabled
 (`ENABLE_USB_INTERFACE`). A build that has only Bluetooth does not answer, and `mc`
 reports that the handshake timed out. `-baud` sets the speed (default 115200, which a
-native USB port ignores). **Not yet tried against real hardware**; the framing is from the
-firmware source and is tested against a fake node. Opening a port can reset some boards
+native USB port ignores). Tried on a LilyGo T-Deck (wadamesh fork, fw v27) over USB; the Seeed T1000-E
+build is Bluetooth only. Opening a port can reset some boards
 (ESP32 boards with a USB-serial chip reset when DTR toggles).
 
 ## Usage

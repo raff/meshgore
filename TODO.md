@@ -88,19 +88,19 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    enough to match unrelated devices. Note that `Seeed`, `Lilygo` and `NRF52` may have
    no `-` in the name, so the short `-name` form does not apply to them; use the full
    advertised name (or add the prefix list if a node turns up that needs it).
-2. **USB serial: written, untested on hardware.** `Client` now sits on a `transport`
+2. **USB serial: works** (tried on a LilyGo T-Deck, fw v27; the T1000-E build is Bluetooth
+   only). `Client` now sits on a `transport`
    interface (`transport.go`: Bluetooth; `serial.go`: serial), `-serial=<port|list>` and
    `-baud` select it, and `Link.Reconnect` reopens the port, so `-cmd=reboot` and
    `-watch` work the same. Framing, from the firmware's `ArduinoSerialInterface`: `<`
    from the app, `>` from the node, a 2-byte little-endian length, no checksum, at most
-   176 bytes, 115200 baud. Tested against a fake node, not a real one. To do:
-   - Try it on a node with `ENABLE_USB_INTERFACE`. Which build environments define it
-     is unconfirmed (the T1000-E companion build may be Bluetooth only), and a node
-     running both interfaces answers on both.
-   - Whether opening the port resets the board (DTR/RTS), and whether `go.bug.st/serial`
-     needs anything on Linux and Windows.
-   - A port that disappears while the node restarts: `Reconnect` retries with backoff,
-     but check how long macOS takes to bring the device node back.
+   176 bytes, 115200 baud. Open:
+   - Try `-cmd=reboot` and `-watch` over serial: the port disappears while the node
+     restarts, and `Reconnect` retries with backoff; check how long macOS takes to bring
+     the device node back.
+   - Whether opening the port resets other boards (DTR/RTS), and whether
+     `go.bug.st/serial` needs anything on Linux and Windows.
+   - A node running both interfaces answers on both.
 3. **Wi-Fi (TCP) companion**, lowest priority. Builds with `ENABLE_WIFI_INTERFACE` serve
    the same `<`/`>` framed protocol on a TCP port (default 5000, per the firmware source).
    With the transport interface in place this is a small addition: `-tcp=host:port`
