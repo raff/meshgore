@@ -85,13 +85,21 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 	}
 	stop := time.AfterFunc(limit, func() { _ = adapter.StopScan() })
 	defer stop.Stop()
+	unnamed := map[string]int16{} // companions seen so far without a name, with their signal
 	err := adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
 		dname := result.LocalName()
 		if !isCompanion(result.HasServiceUUID(serviceUUID), dname) {
 			return
 		}
-		if addr := result.Address.String(); !listed[addr] {
+		// The name often comes in a later packet than the service list, so wait for it
+		// before listing the device.
+		if addr := result.Address.String(); dname == "" {
+			if !listed[addr] {
+				unnamed[addr] = result.RSSI
+			}
+		} else if !listed[addr] {
 			listed[addr] = true
+			delete(unnamed, addr)
 			logf("%q (%s) RSSI: %d", dname, addr, result.RSSI)
 		}
 		if nameMatches(dname, name) {
@@ -101,6 +109,9 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 			logf("Found: %s", dname)
 		}
 	})
+	for addr, rssi := range unnamed {
+		logf("(no name) (%s) RSSI: %d", addr, rssi)
+	}
 	if err != nil {
 		return target, fmt.Errorf("scan error: %w", err)
 	}

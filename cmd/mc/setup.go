@@ -59,7 +59,7 @@ func (a nodeActions) any() bool {
 func parsePosition(s string) (lat, lon float64, err error) {
 	parts := strings.Split(s, ",")
 	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("-set-position wants \"<lat>,<lon>\" in degrees, not %q", s)
+		return 0, 0, fmt.Errorf("a position is \"<lat>,<lon>\" in degrees, not %q", s)
 	}
 	if lat, err = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64); err != nil {
 		return 0, 0, fmt.Errorf("bad latitude %q", parts[0])
@@ -79,7 +79,7 @@ func channelSecret(name, spec string) (secret [16]byte, generated bool, err erro
 	case spec == "" && strings.HasPrefix(name, "#"):
 		return meshgore.HashtagSecret(name), false, nil
 	case spec == "":
-		return secret, false, fmt.Errorf("%q is not a #hashtag channel, so it needs -channel-secret (32 hex digits, or \"random\")", name)
+		return secret, false, fmt.Errorf("%q is not a #hashtag channel, so it needs -secret (32 hex digits, or \"random\")", name)
 	case spec == "random":
 		if _, err := rand.Read(secret[:]); err != nil {
 			return secret, false, err
@@ -88,7 +88,7 @@ func channelSecret(name, spec string) (secret [16]byte, generated bool, err erro
 	}
 	b, err := hex.DecodeString(spec)
 	if err != nil || len(b) != 16 {
-		return secret, false, fmt.Errorf("-channel-secret must be exactly 32 hex digits (16 bytes), or \"random\"")
+		return secret, false, fmt.Errorf("-secret must be exactly 32 hex digits (16 bytes), or \"random\"")
 	}
 	copy(secret[:], b)
 	return secret, false, nil
@@ -133,10 +133,10 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 	}
 
 	if a.gps != "" && a.gps != "on" && a.gps != "off" {
-		return fail(fmt.Errorf("-gps must be \"on\" or \"off\", not %q", a.gps))
+		return fail(fmt.Errorf("gps wants on or off, not %q", a.gps))
 	}
 	if a.interval > 86400 {
-		return fail(fmt.Errorf("-gps-interval must be 0..86400 seconds"))
+		return fail(fmt.Errorf("the GPS interval must be 0..86400 seconds"))
 	}
 
 	var freq, bw, rxd, atf float64
@@ -157,11 +157,11 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		}
 	}
 	if a.shareLoc != "" && a.shareLoc != "share" && a.shareLoc != "none" {
-		return fail(fmt.Errorf("-share-location must be \"share\" or \"none\", not %q", a.shareLoc))
+		return fail(fmt.Errorf("share-location must be \"share\" or \"none\", not %q", a.shareLoc))
 	}
 	if a.multiAcks != "" {
 		if acks, err = strconv.Atoi(a.multiAcks); err != nil || acks < 0 || acks > 255 {
-			return fail(fmt.Errorf("-multi-acks must be 0..255, not %q", a.multiAcks))
+			return fail(fmt.Errorf("multi-acks must be 0..255, not %q", a.multiAcks))
 		}
 	}
 
@@ -172,13 +172,13 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 	var hash int
 	if a.pathHash != "" {
 		if hash, err = strconv.Atoi(a.pathHash); err != nil || hash < 0 || hash > 2 {
-			return fail(fmt.Errorf("-path-hash-mode must be 0, 1 or 2, not %q", a.pathHash))
+			return fail(fmt.Errorf("path-hash must be 0, 1 or 2, not %q", a.pathHash))
 		}
 	}
 	var discoverTypes byte
 	if a.discover != "" {
 		if discoverTypes, err = parseTypes(a.discover); err != nil || discoverTypes == 0 {
-			return fail(fmt.Errorf("-discover wants a list of chat, repeater, room, sensor (or all), not %q", a.discover))
+			return fail(fmt.Errorf("discover wants a list of chat, repeater, room, sensor (or all), not %q", a.discover))
 		}
 	}
 
@@ -332,7 +332,7 @@ func addChannel(c *meshgore.Client, a nodeActions, secret [16]byte, generated bo
 			return exitOK
 		}
 		if !a.force {
-			return fail(fmt.Errorf("a channel named %q already exists in slot %d with a different secret; use -channel-slot=%d -channel-overwrite to replace it", a.channel, ch.Index, ch.Index))
+			return fail(fmt.Errorf("a channel named %q already exists in slot %d with a different secret; use \"channel add -slot=%d -overwrite\" to replace it", a.channel, ch.Index, ch.Index))
 		}
 	}
 
@@ -345,7 +345,7 @@ func addChannel(c *meshgore.Client, a nodeActions, secret [16]byte, generated bo
 	} else if !a.force {
 		for _, ch := range used {
 			if ch.Index == slot {
-				return fail(fmt.Errorf("slot %d holds %q; use -channel-overwrite to replace it", slot, ch.Name))
+				return fail(fmt.Errorf("slot %d holds %q; use -overwrite to replace it", slot, ch.Name))
 			}
 		}
 	}
@@ -421,12 +421,12 @@ func parseAutoAdd(a nodeActions) (autoAddChange, error) {
 	case "on", "off":
 		c.overwrite = b(a.autoOverwrite == "on")
 	default:
-		return c, fmt.Errorf("-auto-add-overwrite must be on or off, not %q", a.autoOverwrite)
+		return c, fmt.Errorf("auto-add -overwrite must be on or off, not %q", a.autoOverwrite)
 	}
 	if a.autoHops != "" {
 		n, err := strconv.Atoi(a.autoHops)
 		if err != nil || n < 0 || n > 64 {
-			return c, fmt.Errorf("-auto-add-max-hops must be 0..64 (0 = no limit), not %q", a.autoHops)
+			return c, fmt.Errorf("auto-add -max-hops must be 0..64 (0 = no limit), not %q", a.autoHops)
 		}
 		h := byte(n)
 		c.hops = &h
@@ -532,7 +532,7 @@ func removeChannel(c *meshgore.Client, a nodeActions) int {
 		}
 	}
 	if target.Index == 0 && !a.force {
-		return fail(errors.New("slot 0 is the Public channel; use -channel-overwrite to remove it anyway"))
+		return fail(errors.New("slot 0 is the Public channel; use \"channel remove 0 -overwrite\" to remove it anyway"))
 	}
 	fmt.Printf("Removing channel [%d] %s\n", target.Index, target.Name)
 	if err := c.ClearChannel(target.Index); err != nil {

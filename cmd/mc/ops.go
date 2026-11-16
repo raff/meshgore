@@ -238,7 +238,7 @@ func runLocalCmds(ctx context.Context, l *meshgore.Link, cmds []string, safe boo
 				break
 			}
 			if wait == 0 {
-				return fail(errors.New("-reconnect-wait=0: cannot run further commands after reboot"))
+				return fail(errors.New("with -reconnect-wait=0 nothing can run after a reboot"))
 			}
 			fmt.Printf("Waiting up to %s for the companion to come back...\n", wait)
 			rctx, cancel := context.WithTimeout(ctx, wait)
