@@ -233,7 +233,8 @@ Open:
   repeater command waiting for its reply inside a repeater session.
 - Completion knows contact names only from the cache; channel names are not offered for `send`.
 - Messages are held back while a command runs; a long `watch` shows none until it stops.
-- Not tried: the session on a repeater console, a long idle session across a Bluetooth drop.
+- Not tried: a long idle session across a Bluetooth drop. The session on a repeater console
+  works (status, `cli`, `safe off`, `cli reboot` and the commands after it).
 
 ## Housekeeping
 
