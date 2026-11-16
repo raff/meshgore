@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/raff/meshgore"
@@ -164,4 +167,110 @@ func resolveContact(client *meshgore.Client, node, target string) (*meshgore.Con
 		return nil, err
 	}
 	return meshgore.FindContact(all, target)
+}
+
+// contactView says which contacts to list and in what order.
+type contactView struct {
+	types  byte          // advert types to show, one bit each (1<<type); 0 means all
+	match  string        // show only names containing this, ignoring case
+	maxAge time.Duration // hide contacts not heard from for longer than this; 0 means no limit
+	sortBy string        // "name" (the default), "advert" (most recently heard first) or "type"
+}
+
+// clockSlack is how far ahead of ours a node's advert time can be before we call its clock wrong.
+const clockSlack = 5 * time.Minute
+
+// clockAhead reports an advert time in the future. The time is the advertiser's own, so a node
+// with a wrong clock shows up here; how long ago it really advertised is then unknown.
+func clockAhead(ct *meshgore.Contact, now time.Time) bool {
+	return heard(ct) && ct.LastAdvert.After(now.Add(clockSlack))
+}
+
+// heard says whether a contact has an advert time at all. A contact added by hand, or
+// one the node never heard, has none.
+func heard(ct *meshgore.Contact) bool { return ct.LastAdvert.Unix() > 0 }
+
+// apply returns the contacts that pass the filters, in order. It leaves cs alone.
+func (v contactView) apply(cs []*meshgore.Contact, now time.Time) []*meshgore.Contact {
+	var out []*meshgore.Contact
+	for _, ct := range cs {
+		if v.types != 0 && (ct.Type > 7 || v.types&(1<<ct.Type) == 0) {
+			continue
+		}
+		if v.match != "" && !strings.Contains(strings.ToLower(ct.Name), strings.ToLower(v.match)) {
+			continue
+		}
+		if v.maxAge > 0 && (!heard(ct) || (!clockAhead(ct, now) && now.Sub(ct.LastAdvert) > v.maxAge)) {
+			continue // one never heard counts as stale; one with its clock ahead was clearly heard
+		}
+		out = append(out, ct)
+	}
+	byName := func(a, b *meshgore.Contact) int {
+		return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+	}
+	when := func(ct *meshgore.Contact) time.Time {
+		if clockAhead(ct, now) {
+			return now // its time is wrong; it was heard, so rank it with the recent ones
+		}
+		return ct.LastAdvert
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		switch v.sortBy {
+		case "advert":
+			if ta, tb := when(a), when(b); !ta.Equal(tb) {
+				return ta.After(tb)
+			}
+		case "type":
+			if a.Type != b.Type {
+				return a.Type < b.Type
+			}
+		}
+		return byName(a, b) < 0
+	})
+	return out
+}
+
+// parseAge reads a duration such as 90m, 36h or 7d (days and weeks, which
+// time.ParseDuration lacks).
+func parseAge(s string) (time.Duration, error) {
+	for suffix, unit := range map[string]time.Duration{"d": 24 * time.Hour, "w": 7 * 24 * time.Hour} {
+		if strings.HasSuffix(s, suffix) {
+			n, err := strconv.ParseFloat(strings.TrimSuffix(s, suffix), 64)
+			if err != nil || n < 0 {
+				return 0, fmt.Errorf("%q is not an age like 90m, 36h or 7d", s)
+			}
+			return time.Duration(n * float64(unit)), nil
+		}
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < 0 {
+		return 0, fmt.Errorf("%q is not an age like 90m, 36h or 7d", s)
+	}
+	return d, nil
+}
+
+// ageString says how long ago something was, briefly: "5m", "14h", "9d".
+func ageString(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d/time.Minute))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d/time.Hour))
+	}
+	return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
+}
+
+// contactLine formats one contact for the list.
+func contactLine(ct *meshgore.Contact, now time.Time) string {
+	when := "no advert time"
+	switch {
+	case clockAhead(ct, now):
+		when = fmt.Sprintf("%s (its clock is ahead)", ct.LastAdvert.Format(time.DateTime))
+	case heard(ct):
+		when = fmt.Sprintf("%s (%s)", ct.LastAdvert.Format(time.DateTime), ageString(now.Sub(ct.LastAdvert)))
+	}
+	return fmt.Sprintf("  %-24s %-8s key %x last advert %s", ct.Name, ct.TypeName(), ct.PublicKey[:6], when)
 }

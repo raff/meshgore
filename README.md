@@ -166,7 +166,18 @@ port to come back (`-reconnect-wait`). Tried on a Seeed SenseCAP Solar repeater
 ./mc -name=MyNode messages -listen=10m # ... and keep listening for new ones
 ./mc -name=MyNode contacts             # list contacts (only changes are fetched after the first time)
 ./mc -name=MyNode contacts -full       # discard the cache and download every contact again
+./mc -name=MyNode contacts repeater,room                 # only some node types
+./mc -name=MyNode contacts -sort advert -max-age 2d      # heard in the last two days, newest first
+./mc -name=MyNode contacts -match solar -sort type       # names containing "solar"
 ```
+
+`contacts` takes a list of node types (`chat`, `repeater`, `room`, `sensor`), `-match TEXT` for part
+of a name (ignoring case), `-max-age 90m|36h|7d` to hide contacts not heard from for that long,
+and `-sort name|advert|type` (the default is by name). A contact the node never heard has no advert
+time and counts as stale. The times are the advertising nodes' **own clocks**: a node with a
+wrong clock can look old, or be dated in the future, and those are shown as "its clock is ahead"
+(kept by `-max-age`, since it was clearly heard, and ranked as recent when sorting by `advert`).
+With `-json` the list is `{"total": N, "contacts": [{"name", "type", "key", "last_advert", "age_s", ...}]}`.
 
 Messages are printed as `[time] channel: sender: text`; direct messages show the
 sender's name when it is in the contact cache (`contacts` fills it) and the key prefix if not.
