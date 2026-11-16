@@ -7,8 +7,8 @@ func TestNameMatches(t *testing.T) {
 		adv, want string
 		ok        bool
 	}{
-		{"MeshCore-KO6IYC-SC", "KO6IYC-SC", true},          // short name, name has a dash
-		{"MeshCore-KO6IYC-SC", "MeshCore-KO6IYC-SC", true}, // full name
+		{"MeshCore-Test-Node", "Test-Node", true},          // short name, name has a dash
+		{"MeshCore-Test-Node", "MeshCore-Test-Node", true}, // full name
 		{"Other-Node", "Node", true},                       // another prefix
 		{"MeshCore-Node", "Nod", false},
 		{"MeshCore-Node", "", false},
