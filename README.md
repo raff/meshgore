@@ -46,6 +46,46 @@ recognised by the Nordic UART service they advertise, or by the `MeshCore-` pref
 
 `go run ./cmd/mc <options> <command>` works the same.
 
+## Interactive session
+
+```
+./mc -name=MyNode            # no command: an interactive session
+./mc -serial=/dev/cu.usbmodem14301 repl
+```
+
+`mc` connects once and then runs the commands you type, so there is no reconnecting, pairing or
+repeater login for each one:
+
+```
+mc MyNode> status
+mc MyNode> dm Bob "on my way"
+mc MyNode> repeater MyRepeater
+Logged in. Type its commands; status, telemetry, safe, exit.
+MyRepeater# get name
+> MyRepeater
+MyRepeater# exit
+mc MyNode>
+```
+
+- Every command works as on the command line, with the same arguments and the same `-h`. The
+  options (`-name`, `-safe`, ...) are the ones the session started with. Quote words with spaces.
+- New messages are printed as they arrive, above the prompt. Anything you were typing
+  disappears from view until the next keystroke, but it is still there. Messages are held back
+  while a command runs or you are logged in to a repeater, and shown afterwards.
+- Ctrl-C stops the command that is running (`watch`, `messages -listen`) and keeps the session.
+  Ctrl-D or `exit` leaves it.
+- Tab completes command names, the usual words after them and contact names. The up arrow
+  recalls earlier lines; the history is kept in the user cache directory (`mc/history`).
+- `repeater NAME`, with nothing after the name, logs in and sends what you type to the repeater
+  (a password is asked for unless `-password` or `MC_PASSWORD` is given; `-password=` means
+  none). Inside it, `status` and `telemetry` read the repeater, `exit` logs out, and safe mode
+  applies. With more after the name (`repeater NAME status`) it is the ordinary command.
+- `safe` shows the read-only check for CLI commands, `safe off` and `safe on` change it; the
+  prompt says `(unsafe)` while it is off.
+- On a repeater console (`-serial=<port> -console`) the session works the same way, without
+  messages. It also accepts piped input, so `printf 'status\nexit\n' | mc -name=MyNode` runs a script.
+- A terminal narrower than the prompt plus 10 columns gets no line editing, only plain lines.
+
 ## Pairing
 
 The companion requires an encrypted link, so the first connection pairs.
@@ -470,7 +510,7 @@ Options come before the command.
 | `messages`, `dm`, `send`, `healthcheck` | messages |
 | `contacts`, `contact`, `channels`, `channel` | contacts and channels |
 | `discover`, `repeater`, `cli` | the network, a repeater, a CLI command on the node |
-| `scan`, `ports`, `help` | find nodes, list serial ports, help |
+| `scan`, `ports`, `help`, `repl` | find nodes, list serial ports, help, an interactive session |
 
 `mc help` has the arguments of each; `mc help <command>` its options.
 
@@ -521,6 +561,7 @@ the `mc` command in `cmd/mc`.
 | `cmd/mc/session.go` | `session`: the connection a command runs on, and `splitArgs` |
 | `cmd/mc/commands.go` | the command registry, flag helpers, `help` |
 | `cmd/mc/cmd_node.go`, `cmd_mesh.go` | the commands |
+| `cmd/mc/repl.go` | the interactive session: prompt, live messages, repeater mode, completion |
 | `cmd/mc/ops.go` | what the commands call: repeater run, CLI on the node, statistics |
 | `cmd/mc/setup.go` | the node actions (name, position, channels, radio, auto-add, discovery, ...) |
 | `cmd/mc/dm.go` | direct messages |

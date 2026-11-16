@@ -36,13 +36,23 @@ func init() {
 }
 
 // messagePrinter returns a function that fetches the waiting messages, prints them
-// and returns them. Names come from the channel list and the contact cache.
-func messagePrinter(s *session, l *meshgore.Link) func() []*meshgore.Message {
-	names := map[int]string{}
-	if chans, err := l.Client.Channels(); err == nil {
-		for _, ch := range chans {
-			names[ch.Index] = ch.Name
+// (through emit, or to stdout if emit is nil) and returns them. Names come from the
+// channel list and the contact cache.
+func messagePrinter(s *session, l *meshgore.Link, emit func(string)) func() []*meshgore.Message {
+	if emit == nil {
+		emit = func(line string) { fmt.Println(line) }
+	}
+	names := map[int]string{} // channel names, looked up the first time each is needed
+	channelName := func(idx int) string {
+		if n, ok := names[idx]; ok {
+			return n
 		}
+		n := ""
+		if ch, err := l.Client.GetChannel(idx); err == nil {
+			n = ch.Name
+		}
+		names[idx] = n
+		return n
 	}
 	contactNames := map[[6]byte]string{}
 	cached, _ := loadContactCache(s.node())
@@ -54,17 +64,17 @@ func messagePrinter(s *session, l *meshgore.Link) func() []*meshgore.Message {
 		for _, msg := range msgs {
 			from := fmt.Sprintf("%x", msg.From)
 			if msg.Channel {
-				from = names[msg.ChannelIdx]
+				from = channelName(msg.ChannelIdx)
 				if from == "" {
 					from = fmt.Sprintf("channel %d", msg.ChannelIdx)
 				}
 			} else if n := contactNames[msg.From]; n != "" {
 				from = n
 			}
-			fmt.Printf("[%s] %s: %s\n", msg.Time.Format(time.DateTime), from, msg.Text)
+			emit(fmt.Sprintf("[%s] %s: %s", msg.Time.Format(time.DateTime), from, msg.Text))
 		}
 		if err != nil {
-			fmt.Println("message sync:", err)
+			emit("message sync: " + err.Error())
 		}
 		return msgs
 	}
@@ -83,7 +93,7 @@ func cmdMessages(s *session, args []string) int {
 	// The subscription outlives a reconnect, so it is made once, before the first sync.
 	waiting := l.Subscribe(meshgore.PushMsgWaiting)
 	defer waiting.Close()
-	printMessages := messagePrinter(s, l)
+	printMessages := messagePrinter(s, l, nil)
 	printMessages()
 	if *listen == 0 {
 		return exitOK
@@ -189,7 +199,7 @@ func cmdHealthcheck(s *session, args []string) int {
 		fmt.Println("error:", err)
 		return exitFail
 	}
-	return runHealthcheck(l, chans, rest[0], *wait, messagePrinter(s, l))
+	return runHealthcheck(l, chans, rest[0], *wait, messagePrinter(s, l, nil))
 }
 
 func cmdContacts(s *session, args []string) int {

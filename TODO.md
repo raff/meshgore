@@ -211,32 +211,29 @@ path hash mode (61) and control data for discovery (55) are done:
 - **Library API is unstable.** `Link`, `Client` and the message types may still
   change. Decide on a real module path before anyone imports it.
 
-## REPL (in progress)
+## REPL (first version done)
 
-Decisions so far:
-- **Done: push dispatcher** (`push.go`). `Client.Push` is gone; readers use `Subscribe`.
-- **Done: subcommand command line.** A `session` owns the connection, and each command is a
-  function `(session, args) -> exit code` in a registry, so a REPL can run the same commands
-  many times. The old option style is gone, on purpose.
-- Line editing: `github.com/peterh/liner`. `github.com/gobs/cmd` (history, completion, scripts,
-  variables) is a possible alternative later: its commands are `Call func(line string) bool`, so
-  each registry command wraps with `splitArgs(line)` and `runLine`.
-- Undecided: whether a repeater console session treats unknown words as `cli` (so you would
-  not type `cli` before everything). Review later.
+Done: the push dispatcher (`push.go`); the subcommand command line on a `session` and a command
+registry; the `repl` command (`cmd/mc/repl.go`) with `github.com/peterh/liner` for editing,
+history and completion; live messages above the prompt; Ctrl-C stopping a running command;
+`repeater NAME` as a session mode; `safe on|off`; piped input as a script. Tried through a
+pseudo-terminal on the T1000-E: Ctrl-C in `watch`, a message arriving while idle, tab
+completion, history, a repeater session (command, safe-mode refusal, exit), Ctrl-D.
 
-Still to do:
-- The `repl` command: prompt showing the target, history, `exit`, Ctrl-C that stops a running
-  command (`watch`, `messages -listen`) without closing the session.
-- Live messages above the prompt, from a `Subscribe(PushMsgWaiting)` goroutine.
-- `repeater NAME` as a session mode: log in once, run `status`, `telemetry` and free text on
-  it, `exit` to go back.
-- `safe on|off` inside a session; a script mode for a non-terminal stdin.
-- Commands print with `fmt.Print*` and exit codes today; a REPL shows the code on failure.
-- Tried on hardware: the new command line on a T1000-E (BLE), a T-Deck (serial), a repeater
-  (through the companion, and on its serial console). Between the T1000-E and the T-Deck, both
-  ways: `dm` (acked in 667 ms and 918 ms, text received), `healthcheck` (code received on the
-  other node) and `send '#healthcheck'` with `healthcheck -wait` on the receiver (`healthcheck
-  OK`), and `messages -listen` showing messages live on both transports.
+Open:
+- Whether a repeater console session treats unknown words as `cli` (so you would not type `cli`
+  before everything). Undecided; review later.
+- `github.com/gobs/cmd` instead of the small loop in `repl.go`, if scripting (`source`, variables)
+  turns out to be wanted. Its commands are `Call func(line string) bool`, and `runLine` with
+  `splitArgs` is what each would call.
+- A script file option (`mc -f file`); piped input already works.
+- The line being typed is hidden (not lost) when a message prints above the prompt. liner cannot
+  redraw it; `chzyer/readline` can, at the cost of a different library.
+- Ctrl-C does not interrupt a console `cli` command that is waiting for its reply, or a
+  repeater command waiting for its reply inside a repeater session.
+- Completion knows contact names only from the cache; channel names are not offered for `send`.
+- Messages are held back while a command runs; a long `watch` shows none until it stops.
+- Not tried: the session on a repeater console, a long idle session across a Bluetooth drop.
 
 ## Housekeeping
 

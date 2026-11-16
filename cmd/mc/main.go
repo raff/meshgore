@@ -16,6 +16,7 @@ import (
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `usage: mc [options] <command> [arguments]
+       mc [options]            (with -name or -serial: an interactive session)
 
 Options choose the node and how to behave:
 `)
@@ -39,6 +40,9 @@ func main() {
 	flag.Parse()
 
 	args := flag.Args()
+	if len(args) == 0 && (g.name != "" || g.serial != "") {
+		args = []string{"repl"} // a node and no command: an interactive session
+	}
 	if len(args) == 0 {
 		usage()
 		os.Exit(exitUsage)
@@ -55,7 +59,13 @@ func main() {
 	if g.json {
 		os.Stdout = os.Stderr
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Ctrl-C ends a one-shot command. In a session it stops the running command instead,
+	// which the session handles itself, so only a termination signal ends that one.
+	sigs := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if args[0] == "repl" {
+		sigs = []os.Signal{syscall.SIGTERM}
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), sigs...)
 	defer stop()
 
 	meshgore.Debug = g.verbose
