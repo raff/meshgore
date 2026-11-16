@@ -80,6 +80,10 @@ mc MyNode>
   (a password is asked for unless `-password` or `MC_PASSWORD` is given; `-password=` means
   none). Inside it, `status` and `telemetry` read the repeater, `exit` logs out, and safe mode
   applies. With more after the name (`repeater NAME status`) it is the ordinary command.
+- `mc -name=MyNode repl -repeater MyRepeater` starts the session already logged in to that
+  repeater, so there is no `repeater MyRepeater` to type. It takes `-password` (or `MC_PASSWORD`;
+  `-password=` means none) and `-timeout`, and a failed login ends the session with an error.
+  `exit` leaves the repeater and returns to the companion prompt; a second `exit` ends the session.
 - `safe` shows the read-only check for CLI commands, `safe off` and `safe on` change it; the
   prompt says `(unsafe)` while it is off.
 - On a repeater console (`-serial=<port> -console`) the session works the same way, without

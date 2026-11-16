@@ -100,12 +100,36 @@ func TestEnterRepeaterLeavesOtherFormsToTheCommand(t *testing.T) {
 		{"-timeout=soon", "Name"},         // not a duration
 		{"-password", "x", "Name", "cmd"}, // an action again
 	} {
-		if r.enterRepeater(args) {
+		if handled, _ := r.enterRepeater(args); handled {
 			t.Errorf("%q was handled as a session", args)
 		}
 	}
 	r.s.g.console = true
-	if r.enterRepeater([]string{"Name"}) {
+	if handled, _ := r.enterRepeater([]string{"Name"}); handled {
 		t.Error("a console session tried to log in to a repeater")
+	}
+}
+
+func TestREPLOptions(t *testing.T) {
+	devnull, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	defer devnull.Close()
+	stdout, stderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = devnull, devnull
+	defer func() { os.Stdout, os.Stderr = stdout, stderr }()
+
+	// the options are checked before anything connects
+	for name, g := range map[string]globalOpts{
+		"-repeater on a console": {console: true, serial: "/dev/none"},
+	} {
+		s := newSession(context.Background(), g, io.Discard)
+		if code := cmdREPL(s, []string{"-repeater", "Name"}); code != exitUsage {
+			t.Errorf("%s: exit %d, want %d", name, code, exitUsage)
+		}
+	}
+	s := newSession(context.Background(), globalOpts{}, io.Discard)
+	for _, args := range [][]string{{"extra"}, {"-nope"}, {"-timeout", "soon"}} {
+		if code := cmdREPL(s, args); code != exitUsage {
+			t.Errorf("repl %q: exit %d, want %d", args, code, exitUsage)
+		}
 	}
 }

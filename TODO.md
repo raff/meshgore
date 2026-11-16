@@ -216,7 +216,7 @@ path hash mode (61) and control data for discovery (55) are done:
 Done: the push dispatcher (`push.go`); the subcommand command line on a `session` and a command
 registry; the `repl` command (`cmd/mc/repl.go`) with `github.com/peterh/liner` for editing,
 history and completion; live messages above the prompt; Ctrl-C stopping a running command;
-`repeater NAME` as a session mode; `safe on|off`; piped input as a script. Tried through a
+`repeater NAME` as a session mode, also from the command line (`repl -repeater NAME`); `safe on|off`; piped input as a script. Tried through a
 pseudo-terminal on the T1000-E: Ctrl-C in `watch`, a message arriving while idle, tab
 completion, history, a repeater session (command, safe-mode refusal, exit), Ctrl-D.
 

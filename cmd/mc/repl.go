@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -18,7 +19,7 @@ import (
 )
 
 func init() {
-	register(&command{"repl", "Connection", "", "an interactive session: run commands one after another on one connection", cmdREPL})
+	register(&command{"repl", "Connection", "[-repeater NAME [-password P]]", "an interactive session: run commands one after another on one connection", cmdREPL})
 }
 
 // A repl runs commands read from a prompt against one session, so the connection
@@ -46,10 +47,22 @@ type repeaterMode struct {
 }
 
 func cmdREPL(s *session, args []string) int {
-	fs := newFlags("repl", "")
-	if _, code, ok := parseFlags(fs, args); !ok {
+	fs := newFlags("repl", "[-repeater NAME [-password P] [-timeout D]]")
+	repeater := fs.String("repeater", "", "log in to this repeater (through the companion) as soon as the session starts")
+	password := fs.String("password", "", "the repeater's admin password (or MC_PASSWORD; an empty one is a password too)")
+	timeout := fs.Duration("timeout", s.g.cmdTimeout, "with -repeater: how long to wait for each command's reply")
+	rest, code, ok := parseFlags(fs, args)
+	if !ok {
 		return code
 	}
+	if len(rest) > 0 {
+		return usageError(fs, "takes no arguments, only options")
+	}
+	if *repeater != "" && s.g.console {
+		return usageError(fs, "-repeater needs a companion node, but the session is on a repeater console")
+	}
+	passwordGiven := false
+	fs.Visit(func(f *flag.Flag) { passwordGiven = passwordGiven || f.Name == "password" })
 	// Connect now, so the first prompt appears on a working connection and live
 	// messages can start.
 	if s.g.console {
@@ -95,6 +108,16 @@ func cmdREPL(s *session, args []string) int {
 		go r.background(ctx)
 	}
 
+	if *repeater != "" {
+		// asked for on the command line, so a failure to log in ends the session
+		a := []string{"-timeout=" + timeout.String(), *repeater}
+		if passwordGiven {
+			a = append([]string{"-password=" + *password}, a...)
+		}
+		if _, ok := r.enterRepeater(a); !ok {
+			return exitFail
+		}
+	}
 	fmt.Println("Type help for the commands, exit to leave.")
 	for {
 		r.setPrompt()
@@ -260,7 +283,7 @@ func (r *repl) exec(text string) (quit bool) {
 		fmt.Println("already in a session")
 		return false
 	case "repeater":
-		if r.enterRepeater(args[1:]) {
+		if handled, _ := r.enterRepeater(args[1:]); handled {
 			return false
 		}
 	}
@@ -303,9 +326,10 @@ func (r *repl) safe(args []string) {
 }
 
 // enterRepeater handles "repeater NAME" typed with nothing after the name: it logs in
-// and the following lines go to the repeater until "exit". It reports whether it
-// handled the line; anything with more to it is left to the repeater command.
-func (r *repl) enterRepeater(args []string) bool {
+// and the following lines go to the repeater until "exit". handled says whether the
+// line was one it takes (anything with more to it is left to the repeater command), and
+// ok whether the login worked.
+func (r *repl) enterRepeater(args []string) (handled, ok bool) {
 	var name, password string
 	havePassword := false // given on the line, even if empty
 	timeout := r.s.g.cmdTimeout
@@ -320,41 +344,41 @@ func (r *repl) enterRepeater(args []string) bool {
 		case strings.HasPrefix(a, "-timeout="):
 			d, err := time.ParseDuration(strings.TrimPrefix(a, "-timeout="))
 			if err != nil {
-				return false
+				return false, false
 			}
 			timeout = d
 		case strings.HasPrefix(a, "-"), name != "":
-			return false // other options, or actions after the name: the command handles it
+			return false, false // other options, or actions after the name: the command handles it
 		default:
 			name = a
 		}
 	}
 	if name == "" || r.s.g.console {
-		return false
+		return false, false
 	}
 	l := r.s.link
 	ct, err := resolveContact(l.Client, r.s.node(), name)
 	if err != nil {
 		fmt.Println("error:", err)
-		return true
+		return true, false
 	}
 	fmt.Printf("Repeater: %s (%s, key %x)\n", ct.Name, ct.TypeName(), ct.PublicKey[:6])
 	if !havePassword {
 		if password = os.Getenv("MC_PASSWORD"); password == "" {
 			if password, err = r.line.PasswordPrompt("password (empty for none): "); err != nil {
-				return true
+				return true, false
 			}
 		}
 	}
 	if err := l.Client.Login(ct.PublicKey, password); err != nil {
 		fmt.Println("error:", err)
-		return true
+		return true, false
 	}
 	fmt.Println("Logged in. Type its commands; status, telemetry, safe, exit.")
 	r.mu.Lock()
 	r.rep = &repeaterMode{ct: ct, timeout: timeout}
 	r.mu.Unlock()
-	return true
+	return true, true
 }
 
 // execRepeater runs a line typed inside a repeater session.
