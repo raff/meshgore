@@ -171,7 +171,7 @@ Replies from `get` start with `> `.
   The companion has no `tempradio` (no automatic revert).
 - `-telemetry` with `-repeater=<name> -password=...` asks a repeater for its sensor
   readings (the CLI has no `telemetry` command; this is a separate radio request,
-  like `-status`). Untested against a real repeater. Without `-repeater` it shows
+  like `-status`). Without `-repeater` it shows
   the companion's own sensors: battery, temperature and, with a GPS
   fix, the position (`0,0` means no fix yet).
 - `-share-location` and `-multi-acks` are written together by the firmware; `mc`

@@ -55,3 +55,11 @@ func TestParseLPP(t *testing.T) {
 		t.Errorf("rest % x", rest)
 	}
 }
+
+func TestParseLPPPadding(t *testing.T) {
+	// a repeater's reply: voltage 4.09 V, temperature 20.0 C, then four zero bytes
+	got, rest := parseLPP([]byte{1, 0x74, 0x01, 0x99, 1, 0x67, 0x00, 0xC8, 0, 0, 0, 0})
+	if len(got) != 2 || got[0].Value != "4.09 V" || got[1].Value != "20.0 C" || len(rest) != 0 {
+		t.Errorf("got %+v, rest % x", got, rest)
+	}
+}

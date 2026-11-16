@@ -152,10 +152,22 @@ type Reading struct {
 	Value   string `json:"value"`
 }
 
+func allZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // parseLPP reads telemetry in Cayenne LPP form: channel, type, data. It stops
 // at a type it does not know and returns what it read, with the rest as hex.
 func parseLPP(b []byte) (out []Reading, rest []byte) {
 	for len(b) >= 2 {
+		if allZero(b) { // the firmware pads the reply with zero bytes
+			return out, nil
+		}
 		ch, typ, d := int(b[0]), b[1], b[2:]
 		size := map[byte]int{0x00: 1, 0x01: 1, 0x02: 2, 0x03: 2, 0x65: 2, 0x66: 1, 0x67: 2, 0x68: 1, 0x71: 6, 0x73: 2, 0x74: 2, 0x86: 6, 0x88: 9}[typ]
 		if size == 0 || len(d) < size {
