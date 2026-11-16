@@ -193,7 +193,10 @@ Measured with the repeater indoors, then outside (not very high):
   The counts are rough: different times of day, and the indoor figure is an average over two hours.
 - Everything heard was a plain (unscoped) flood, so a scope requirement does not look like the cause.
   The Bay Area healthcheck site refuses automated fetches (403), so what its observers require is
-  unconfirmed. The next check is a fresh healthcheck code from that page sent with `mc healthcheck`.
+  unconfirmed.
+- **Result:** with the repeater outside, a fresh code sent with `mc healthcheck` from the T1000-E was
+  reported by the observers. So the cause was range, not scope or a setting, and no region or
+  default scope was needed. (The companion sends through its repeater; neither is high up yet.)
 - Region scope, from the MeshCore blog (Jan and Apr 2026): repeaters since v1.10.0 do not forward a
   scoped flood for a region they do not have; `region denyf *` makes a repeater refuse unscoped floods
   ("not advised at this stage"); the default scope is a v1.15.0 feature. Region names are lowercase
