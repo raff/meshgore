@@ -115,6 +115,46 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    With the transport interface in place this is a small addition: `-tcp=host:port`
    with a transport over `net.Conn`, reusing `frameReader` and `frameForNode`.
 
+## Buzzer, LED and vibration (notifications)
+
+What the firmware source says (checked on `main`, 2026-11-16; the variant `target.h` files
+and the last part of `MyMesh.cpp` were not read, and it is not known which UI the T1000-E
+builds):
+
+- **There is no remote control.** No companion command (`CMD_*`, codes 1-66 checked) and no
+  CLI command (companion or serial) reads or writes the buzzer, LED or vibration.
+  `CMD_SET_OTHER_PARAMS` has only manual-add, telemetry, advert location and multi-acks.
+  `CMD_SET_CUSTOM_VAR` handles only `gps` and `gps_interval`. So `-vars` showing only `gps`
+  on the T1000-E is expected, and `-cmd` cannot do it either.
+- **One persisted flag.** `NodePrefs.buzzer_quiet` (default 0, buzzer on), saved with the
+  prefs, applied at boot. A second flag, `vibe_quiet`, is only used by the older `ui-orig`
+  UI on boards with a haptic driver (`HAS_DRV2605`). Muting also silences the startup and
+  shutdown tones.
+- **It is toggled on the device**: a triple click of the user button flips the buzzer
+  (an acknowledge beep plays when it turns on); on `ui-orig` boards with a haptic driver it
+  cycles buzz+vibe, buzz only, vibe only, silent. A double click sends an advert.
+- **No per-event settings** (new message, DM, channel). The buzzer sounds for direct and
+  channel messages, with different melodies, plus startup, shutdown and acks; a new contact
+  or a room message makes no sound. Vibration triggers on every notification except none.
+- **Only while no app is connected.** In the new UI the message sounds and vibration play
+  only when `!hasConnection()`: with a phone (or `mc`) connected over Bluetooth the device
+  stays quiet, and the app decides what to notify. That is why the app's notification
+  settings (new messages, DMs, channels) can only be phone-side; nothing in the firmware or
+  docs lets the app send them to the device. The app's source was not available to check.
+- **LED**: a status LED blinks faster when messages are waiting (`ui-new`); an RGB one with
+  colours for battery, unread messages and connection on `ui-orig`. Not controllable.
+
+Possible work, in order of effort:
+
+1. Document the button gesture in the README (triple click toggles the buzzer on the
+   T1000-E, still to be confirmed on the device).
+2. Show the state if it can be known: nothing exposes it today, so this needs a firmware
+   change.
+3. Propose to MeshCore a custom variable (for example `buzzer` and `vibe`, 0/1, through
+   `CMD_SET_CUSTOM_VAR`) or a CLI command; `-vars` and `-cmd` would then work with no
+   change here. Once a firmware has it, `-vars` lists it.
+4. Re-check after firmware updates: `mc -vars` and `mc -cmd "get <name>"` on a new build.
+
 ## Still to test on hardware
 
 - Repeater clock from GPS: on the SenseCAP Solar repeater (v1.18.0), enabling GPS
