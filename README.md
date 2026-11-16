@@ -33,8 +33,11 @@ go build -o mc ./cmd/mc
 ./mc -name=MyNode
 ```
 
-`-name` is the part of the BLE name after `MeshCore-`: the node advertising as
-`MeshCore-MyNode` is `-name=MyNode`. Without `-name`, `mc` scans for 10 seconds,
+`-name` is the part of the BLE name after the first `-`: the node advertising as
+`MeshCore-MyNode` is `-name=MyNode`. The full advertised name (`-name=MeshCore-MyNode`)
+works too, which is how to select a node with a different prefix. Nodes are
+recognised by the Nordic UART service they advertise, or by the `MeshCore-` prefix.
+Without `-name`, `mc` scans for 10 seconds,
 lists the MeshCore nodes it can see and exits.
 
 `go run ./cmd/mc <flags>` works the same.
@@ -369,7 +372,7 @@ output plus a non-zero exit as a failure.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `-name` | | companion name, without the `MeshCore-` prefix |
+| `-name` | | companion name: what follows the first `-` of its Bluetooth name (`MeshCore-MyNode` is `MyNode`), or the full name |
 | `-v` | off | log every raw protocol frame (`->` sent, `<-` received) |
 | `-listen` | 15s | how long to wait for new messages (reconnects if the link drops); `0` syncs once and exits |
 | `-contacts` | off | sync and list contacts; after the first download only changes are fetched |

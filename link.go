@@ -36,17 +36,41 @@ func mustUUID(s string) bluetooth.UUID {
 // Enable turns on the local Bluetooth adapter. Call it once before Scan.
 func Enable() error { return adapter.Enable() }
 
-// Scan looks for the companion advertising as "MeshCore-<name>" and returns it
-// once found. With an empty name it lists nearby MeshCore nodes through Logf
-// for 10 seconds and then returns an error.
+// knownPrefix is the usual start of a companion's Bluetooth name.
+const knownPrefix = "MeshCore-"
+
+// nameMatches reports whether an advertised Bluetooth name is the node called
+// want. want may be the full name ("MeshCore-Node") or what follows the first
+// "-" of it ("Node"), so a node advertising with another prefix is still found.
+func nameMatches(advertised, want string) bool {
+	if want == "" {
+		return false
+	}
+	if advertised == want {
+		return true
+	}
+	_, rest, ok := strings.Cut(advertised, "-")
+	return ok && rest == want
+}
+
+// isCompanion reports whether a scan result looks like a companion: it offers the
+// Nordic UART service the protocol runs on, or has the usual name prefix (for a
+// result whose advertisement left out the service list).
+func isCompanion(hasService bool, name string) bool {
+	return hasService || strings.HasPrefix(name, knownPrefix)
+}
+
+// Scan looks for the companion called name (see nameMatches) and returns it once
+// found. Devices are recognised by the service UUID they advertise, or by the
+// "MeshCore-" name prefix. With an empty name it lists the nodes it sees through
+// Logf for 10 seconds and then returns an error.
 func Scan(name string) (bluetooth.ScanResult, error) {
 	var target bluetooth.ScanResult
-	var fname string
 	found := false
+	listed := map[string]bool{}
 
 	if name != "" {
-		fname = "MeshCore-" + name
-		logf("Looking for %q", fname)
+		logf("Looking for %q", name)
 	}
 	logf("Scanning...")
 	if name == "" {
@@ -55,11 +79,14 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 	}
 	err := adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
 		dname := result.LocalName()
-		if !strings.HasPrefix(dname, "MeshCore-") {
+		if !isCompanion(result.HasServiceUUID(serviceUUID), dname) {
 			return
 		}
-		logf("%q (%s) RSSI: %d", dname, result.Address.String(), result.RSSI)
-		if dname == fname {
+		if addr := result.Address.String(); !listed[addr] {
+			listed[addr] = true
+			logf("%q (%s) RSSI: %d", dname, addr, result.RSSI)
+		}
+		if nameMatches(dname, name) {
 			target = result
 			found = true
 			_ = adapter.StopScan()
@@ -71,7 +98,7 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 	}
 	if !found {
 		if name == "" {
-			return target, errors.New("no name given; the MeshCore nodes seen were logged")
+			return target, errors.New("no name given; the companions seen were logged")
 		}
 		return target, errors.New("device not found")
 	}

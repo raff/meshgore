@@ -73,20 +73,13 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
 
 ## Connection: other device names and other transports
 
-1. **Other BLE name prefixes.** `Scan` in `link.go` only accepts devices named
-   `MeshCore-<name>` (it checks the prefix and builds `MeshCore-` + `-name`). Some
-   firmware builds advertise other prefixes; a document I saw listed two or three
-   "valid" ones, but I have not seen it again, so confirm the list against the firmware
-   and the official apps before relying on it. Options:
-   - Match a list of known prefixes, and let `-name` be the full name when it already
-     has one (`-name=SomePrefix-Node`).
-   - Or ignore the name and look for the Nordic UART service
-     `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` in the advertisement, then match `-name`
-     against what follows the first `-`. Any device with that service, not only
-     MeshCore, would show up in a scan, so keep a prefix check or an explicit "this is
-     not a MeshCore node" warning. Check that the macOS BLE library reports service
-     UUIDs in scan results (it may only do so for some advertisements).
-   - Also list every candidate when a scan finds none, so a wrong prefix is visible.
+1. **Other BLE name prefixes: done.** `Scan` now recognises a companion by the service
+   UUID in its advertisement or by the `MeshCore-` prefix, and `-name` matches the part
+   after the first `-` or the full name. Checked on macOS: the T1000-E's advertisement
+   carries `6E400001-...`. Still open: a node that advertises the service only in a
+   scan response may need a longer scan on other platforms, and Linux/Windows are
+   untested. A non-MeshCore device with the same UART service is listed too (it is only
+   selected if its name matches `-name`).
 2. **USB serial** as an alternative to Bluetooth, for nodes that are plugged in or
    have Bluetooth off, and without pairing. The companion firmware speaks the same
    protocol over serial, framed: a start byte (`<` from the app, `>` from the node), a
