@@ -36,7 +36,8 @@ func mustUUID(s string) bluetooth.UUID {
 // Enable turns on the local Bluetooth adapter. Call it once before Scan.
 func Enable() error { return adapter.Enable() }
 
-// knownPrefix is the usual start of a companion's Bluetooth name.
+// knownPrefix is the usual start of a companion's Bluetooth name. Other builds use
+// other prefixes (see TODO.md); the service UUID is what finds those.
 const knownPrefix = "MeshCore-"
 
 // nameMatches reports whether an advertised Bluetooth name is the node called

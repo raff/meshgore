@@ -80,6 +80,14 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    scan response may need a longer scan on other platforms, and Linux/Windows are
    untested. A non-MeshCore device with the same UART service is listed too (it is only
    selected if its name matches `-name`).
+   Prefixes reported for stock builds (from a list given to me; accuracy unchecked):
+   `MeshCore-`, `Whisper-`, `WisCore-`, `Seeed`, `Lilygo`, `HT-`, `LowMesh_MC_`, `NRF52`.
+   The same source says to filter on the Nordic UART service UUID so forks with
+   non-standard names are still found, which is what `Scan` does. I did not add these
+   prefixes as a fallback: the UUID covers them, and `HT-` and `NRF52` are generic
+   enough to match unrelated devices. Note that `Seeed`, `Lilygo` and `NRF52` may have
+   no `-` in the name, so the short `-name` form does not apply to them; use the full
+   advertised name (or add the prefix list if a node turns up that needs it).
 2. **USB serial** as an alternative to Bluetooth, for nodes that are plugged in or
    have Bluetooth off, and without pairing. The companion firmware speaks the same
    protocol over serial, framed: a start byte (`<` from the app, `>` from the node), a
