@@ -1,14 +1,15 @@
 # Repeater CLI commands
 
 Commands you can send to a MeshCore repeater (also room servers and sensors)
-with `-cmd`. Source: the firmware's `docs/cli_commands.md`
+with `mc repeater NAME cmd ...` (or `-c` before the name), or on the node you are
+connected to with `mc cli ...`. Source: the firmware's `docs/cli_commands.md`
 (<https://github.com/meshcore-dev/MeshCore/blob/main/docs/cli_commands.md>).
 What a node actually supports depends on its firmware version and build, so
 treat this as the upper bound and check with `ver` first.
 
 **Safe mode.** By default `mc` runs only the commands in the first table and
-refuses everything else before it sends anything. Pass `-safe=false` to run the
-others. The check is an allowlist (`IsReadOnlyCommand` in `repeater.go`): a command
+refuses everything else before it sends anything. Pass the option `-safe=false`
+(before the command) to run the others. The check is an allowlist (`IsReadOnlyCommand` in `repeater.go`): a command
 it does not recognise counts as unsafe.
 
 ## Read-only (allowed in safe mode)
@@ -78,8 +79,9 @@ mode because it prints the private key.
 | `clkreboot` | reset the clock and reboot; no reply is sent |
 | `start ota` | start an over-the-air firmware update |
 
-For commands that send no reply, `mc` waits for `-cmd-timeout` and then exits
-with code 1. That is expected.
+For commands that send no reply (`reboot`), `mc` waits for the reply timeout (`-timeout`
+for a repeater, `-cmd-timeout` for the node you are connected to) and then reports no
+reply. That is expected.
 
 A bad `set radio`, `set freq` or `set repeat off` can cut the repeater off from
 you, because the radio is the only way in. Use `tempradio` to try radio
@@ -87,13 +89,13 @@ changes: it reverts on its own.
 
 ## Serial only (do not work through a companion)
 
-Run these with `-serial=<port> -serial-cli -cmd ...`. `stats-core`, `stats-radio`,
+Run these with `mc -serial=<port> -console cli ...`. `stats-core`, `stats-radio`,
 `stats-packets` and `log` are allowed in safe mode.
 
 
 `stats-core`, `stats-radio`, `stats-packets`, `log` (print the captured log),
 `erase` (factory reset, destructive) and `get prv.key`. For statistics over
-the radio use `-status`, which uses a binary request instead.
+the radio use `mc repeater NAME status`, which uses a binary request instead.
 
 ## Version-dependent
 

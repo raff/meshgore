@@ -1,5 +1,9 @@
 # TODO
 
+The command line is now `mc [options] <command>` (see the README). Entries below that were
+written earlier name the old options (`-watch`, `-set-radio`, `-serial-cli`, ...); the
+commands that replaced them are `watch`, `radio set`, `-console`, and so on.
+
 What is left, in the order I would do it. Protocol notes say where a layout
 comes from: the companion protocol doc, or `meshcore_py` (the official Python
 client), which is the reference wherever the doc is silent. Untested items need
@@ -209,12 +213,27 @@ path hash mode (61) and control data for discovery (55) are done:
 
 ## REPL (in progress)
 
-- **Push dispatcher: done** (`push.go`). `Client.Push` is gone; readers use `Subscribe`. Tried on
-  the T1000-E (login, status, telemetry, discovery) and in unit tests under `-race`; the live
-  `-listen` path had no traffic to show it on hardware.
-- Next: decide the command line (subcommands instead of flags) and the order of the work, then
-  the session loop, line editing with output above the prompt, and the targets described
-  in the design notes (companion, repeater via login, serial console, `cli <text>` passthrough).
+Decisions so far:
+- **Done: push dispatcher** (`push.go`). `Client.Push` is gone; readers use `Subscribe`.
+- **Done: subcommand command line.** A `session` owns the connection, and each command is a
+  function `(session, args) -> exit code` in a registry, so a REPL can run the same commands
+  many times. The old option style is gone, on purpose.
+- Line editing: `github.com/peterh/liner`. `github.com/gobs/cmd` (history, completion, scripts,
+  variables) is a possible alternative later: its commands are `Call func(line string) bool`, so
+  each registry command wraps with `splitArgs(line)` and `runLine`.
+- Undecided: whether a repeater console session treats unknown words as `cli` (so you would
+  not type `cli` before everything). Review later.
+
+Still to do:
+- The `repl` command: prompt showing the target, history, `exit`, Ctrl-C that stops a running
+  command (`watch`, `messages -listen`) without closing the session.
+- Live messages above the prompt, from a `Subscribe(PushMsgWaiting)` goroutine.
+- `repeater NAME` as a session mode: log in once, run `status`, `telemetry` and free text on
+  it, `exit` to go back.
+- `safe on|off` inside a session; a script mode for a non-terminal stdin.
+- Commands print with `fmt.Print*` and exit codes today; a REPL shows the code on failure.
+- Tried on hardware: the new command line on a T1000-E (BLE), a repeater (through the
+  companion, and on its serial console). Live message listening had no traffic to show.
 
 ## Housekeeping
 

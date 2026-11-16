@@ -30,17 +30,21 @@ or from a checkout:
 
 ```
 go build -o mc ./cmd/mc
-./mc -name=MyNode
+./mc -name=MyNode info
 ```
+
+`mc [options] <command> [arguments]`. The options choose the node and how to
+behave; the command says what to do. `mc help` lists the commands and
+`mc help <command>` describes one. Flags of a command go before its other arguments
+(`mc dm -h`, `mc watch -csv=out.csv 5m`).
 
 `-name` is the part of the BLE name after the first `-`: the node advertising as
 `MeshCore-MyNode` is `-name=MyNode`. The full advertised name (`-name=MeshCore-MyNode`)
 works too, which is how to select a node with a different prefix. Nodes are
 recognised by the Nordic UART service they advertise, or by the `MeshCore-` prefix.
-Without `-name`, `mc` scans for 10 seconds,
-lists the MeshCore nodes it can see and exits.
+`mc scan` lists the companions in range.
 
-`go run ./cmd/mc <flags>` works the same.
+`go run ./cmd/mc <options> <command>` works the same.
 
 ## Pairing
 
@@ -63,37 +67,38 @@ System Settings -> Bluetooth to pair again.
 ## USB serial
 
 ```
-./mc -serial=list                          # show the serial ports
-./mc -serial=/dev/cu.usbmodem14301 -status
+./mc ports                                          # show the serial ports
+./mc -serial=/dev/cu.usbmodem14301 status
 ```
 
 `-serial=<port>` connects over USB instead of Bluetooth: no scanning, no pairing and
-no `-name` needed (the node's own name is used). Everything else works the same,
-including `-cmd=reboot`, which waits for the port to come back.
+no `-name` needed (the node's own name is used). Every command works the same,
+including `cli reboot`, which waits for the port to come back.
 
 The node must run a build with its USB serial interface enabled
 (`ENABLE_USB_INTERFACE`). A build that has only Bluetooth does not answer, and `mc`
 reports that the handshake timed out. `-baud` sets the speed (default 115200, which a
-native USB port ignores). Tried on a LilyGo T-Deck (wadamesh fork, fw v27) over USB; the Seeed T1000-E
-build is Bluetooth only. Opening a port can reset some boards
+native USB port ignores). Tried on a LilyGo T-Deck (wadamesh fork, fw v27) over USB; the
+Seeed T1000-E build is Bluetooth only. Opening a port can reset some boards
 (ESP32 boards with a USB-serial chip reset when DTR toggles).
 
 ### Repeater or room server on USB
 
 A repeater's USB port is a text console, not the companion protocol, so `-serial` alone
-fails on it. Add `-serial-cli`:
+fails on it. Add `-console`:
 
 ```
-./mc -serial=/dev/cu.usbmodem14201 -serial-cli -cmd ver -cmd stats-core
-./mc -serial=/dev/cu.usbmodem14201 -serial-cli -safe=false -cmd reboot -cmd ver
-./mc -serial=/dev/cu.usbmodem14201 -serial-cli -status [-json] [-min-battery=3.6]
-./mc -serial=/dev/cu.usbmodem14201 -serial-cli -watch=5m -csv=repeater.csv
+./mc -serial=/dev/cu.usbmodem14201 -console cli ver
+./mc -serial=/dev/cu.usbmodem14201 -console cli -c ver -c stats-core
+./mc -serial=/dev/cu.usbmodem14201 -console -safe=false cli reboot
+./mc -serial=/dev/cu.usbmodem14201 -console status -min-battery=3.6
+./mc -serial=/dev/cu.usbmodem14201 -console watch -csv=repeater.csv 5m
 ```
 
-`-status` and `-watch` run `stats-core`, `stats-radio` and `stats-packets` and print the same
+`status` and `watch` run `stats-core`, `stats-radio` and `stats-packets` and print the same
 statistics as for a companion (`-json`, `-csv`, `-min-battery` and `-max-noise` work, with exit
-code 2 on an alert). Reading all three takes about 2 seconds, so a `-watch` period shorter
-than that is stretched.
+code 2 on an alert). Reading all three takes about 2 seconds, so a `watch` period shorter
+than that is stretched. Commands that need a companion (messages, contacts, channels, ...) say so.
 
 There is no login or password, and no radio hop; commands run on the node itself, so
 the serial-only ones work: `stats-core`, `stats-radio`, `stats-packets` and `log` are
@@ -111,62 +116,61 @@ port to come back (`-reconnect-wait`). Tried on a Seeed SenseCAP Solar repeater
 ### Look at the companion
 
 ```
-./mc -name=MyNode                  # info, channels, queued messages, then listen 15 s
-./mc -name=MyNode -listen=10m      # keep listening for new messages
-./mc -name=MyNode -listen=0        # sync once and exit
-./mc -name=MyNode -contacts        # also list contacts (only changes after the first time)
-./mc -name=MyNode -full-sync       # discard the cache and download every contact again
+./mc -name=MyNode info                 # name, key, position, radio, firmware
+./mc -name=MyNode channels
+./mc -name=MyNode messages             # print what is waiting
+./mc -name=MyNode messages -listen=10m # ... and keep listening for new ones
+./mc -name=MyNode contacts             # list contacts (only changes are fetched after the first time)
+./mc -name=MyNode contacts -full       # discard the cache and download every contact again
 ```
 
 Messages are printed as `[time] channel: sender: text`; direct messages show the
-sender's name if contacts are loaded (`-contacts`) and the key prefix if not.
+sender's name when it is in the contact cache (`contacts` fills it) and the key prefix if not.
 
 ### Send a healthcheck
 
 ```
-./mc -name=MyNode -healthcheck=MHC-1234
-./mc -name=MyNode -healthcheck=MHC-1234 -healthcheck-wait=60s
+./mc -name=MyNode healthcheck MHC-1234
+./mc -name=MyNode healthcheck -wait=60s MHC-1234
 ```
 
 Sends the code as a message on the channel named `#healthcheck` and exits.
-With `-healthcheck-wait`, it then waits for a message containing the code to
+With `-wait`, it then waits for a message containing the code to
 appear on that channel and exits 1 if none does. That only works if something
 else repeats the code back: a node never receives its own channel message and
-channel messages have no acknowledgement.
+channel messages have no acknowledgement. `send CHANNEL TEXT...` sends any text on
+any channel (by name or slot).
 
 ### Set up a fresh node
 
-A reflashed node has no name, no position and none of your channels. One command
-can set all of that and announce the node:
+A reflashed node has no name, no position and none of your channels:
 
 ```
-./mc -name=MyNode -set-name="MyNode" -set-position=48.8584,2.2945 \
-     -add-channel="#healthcheck" -advert=flood
+./mc -name=MyNode set name "MyNode"
+./mc -name=MyNode set position 48.8584,2.2945
+./mc -name=MyNode channel add "#healthcheck"
+./mc -name=MyNode advert flood
 ```
 
-The steps run in the order name, position, channel, advert, and everything is
-checked before the first change, so a typo in a later flag does not leave the node
-half configured.
-
-- `-set-name`: the name the node advertises. The device keeps at most 31 bytes and
+- `set name`: the name the node advertises. The device keeps at most 31 bytes and
   silently cuts off more, so `mc` refuses a longer name.
-- `-set-position=<lat>,<lon>`: in degrees. A node with GPS enabled may replace it
+- `set position <lat>,<lon>`: in degrees. A node with GPS enabled may replace it
   with its own fix.
-- `-add-channel=<name>`: a `#hashtag` channel needs nothing else, since its secret
+- `channel add <name>`: a `#hashtag` channel needs nothing else, since its secret
   comes from its name (the first 16 bytes of the SHA-256 of the name, `#`
   included) and anyone who knows the name can join. A private channel needs
-  `-channel-secret=<32 hex digits>`, or `-channel-secret=random` to make one,
+  `-secret=<32 hex digits>`, or `-secret=random` to make one,
   which `mc` prints once. Keep it: others need it to join and it cannot be shown
   again (the node never reveals it).
-- `-channel-slot=<n>` picks the slot; the default is the first empty one. A used
-  slot is only replaced with `-channel-overwrite`.
+- `-slot=<n>` picks the slot; the default is the first empty one. A used
+  slot is only replaced with `-overwrite`.
 - Adding a channel that is already there with the same secret does nothing, so the
   command is safe to repeat.
 
 ### See what the node supports
 
 ```
-./mc -name=MyNode -vars
+./mc -name=MyNode vars
 ```
 
 Lists the node's custom variables (`GET_CUSTOM_VARS`): settings that exist only if
@@ -177,121 +181,118 @@ support was compiled in.
 ### Companion statistics
 
 ```
-./mc -name=MyNode -status
-./mc -name=MyNode -status -json
+./mc -name=MyNode status
+./mc -json -name=MyNode status
+./mc -name=MyNode watch 5m
 ```
 
-Without `-repeater`, `-status` reads the companion's own statistics: battery,
-uptime, storage, noise floor, last RSSI and SNR, airtime and packet counts. A part
-the firmware does not answer is left out.
+Battery, uptime, storage, noise floor, last RSSI and SNR, airtime and packet counts.
+A part the firmware does not answer is left out. `watch` takes `-csv`, `-min-battery`
+and `-max-noise` as for a repeater, and reconnects if the link drops.
 
 ### CLI commands on the companion
 
 ```
-./mc -name=MyNode -cmd=ver -cmd=board -cmd="get radio"
+./mc -name=MyNode cli ver
+./mc -name=MyNode cli get radio
+./mc -name=MyNode cli -c ver -c "get tx"
+./mc -name=MyNode -safe=false cli set tx 20
 ```
 
-Without `-repeater`, `-cmd` runs on the companion itself (`CMD_RUN_CLI_COMMAND`,
-firmware v14+), with the same `-safe` check as for a repeater. The companion's
-command set is much smaller; unknown commands reply `Unknown command`. Tried on a
-T1000-E (v1.18.0): `ver`, `board`, `get name`, `get radio`, `get tx`, `get freq`,
-`get radio.rxgain`, `get rxdelay`, `get af` and `get tz.offset` work, and so does
-`set tx` (needs `-safe=false`). `clock`, `gps`,
-`neighbors`, `get lat`, `get lon`, `get repeat` and `get public.key` do not.
+`cli` runs a CLI command on the companion itself (`CMD_RUN_CLI_COMMAND`, firmware
+v14+), with the same safe-mode check as for a repeater. The words after the options
+are one command; use `-c` for several. The companion's command set is much smaller;
+unknown commands reply `Unknown command`. Tried on a T1000-E (v1.18.0): `ver`, `board`,
+`get name`, `get radio`, `get tx`, `get freq`, `get radio.rxgain`, `get rxdelay`,
+`get af` and `get tz.offset` work, and so does `set tx` (needs `-safe=false`).
+`clock`, `gps`, `neighbors`, `get lat`, `get lon`, `get repeat` and `get public.key` do not.
 Replies from `get` start with `> `.
 
-`-cmd=reboot -safe=false` waits for the companion to come back (up to
-`-reconnect-wait`, default 2 minutes) and then runs any later `-cmd`s.
+`cli reboot` (with `-safe=false`) waits for the companion to come back (up to
+`-reconnect-wait`, default 2 minutes) and then runs any later `-c` commands.
 
 ### Clock, radio and other companion settings
 
 ```
-./mc -name=MyNode -clock -tuning -telemetry     # read
-./mc -name=MyNode -sync-clock                   # set the clock from this computer
-./mc -name=MyNode -set-radio=910.525,62.5,7,5   # freq MHz, bw kHz, SF, CR
-./mc -name=MyNode -rx-delay=0 -airtime-factor=1
-./mc -name=MyNode -share-location=share -multi-acks=1
+./mc -name=MyNode clock                         # show
+./mc -name=MyNode clock sync                    # set from this computer
+./mc -name=MyNode radio set 910.525,62.5,7,5    # freq MHz, bw kHz, SF, CR
+./mc -name=MyNode tuning -rx-delay=0 -airtime-factor=1
+./mc -name=MyNode set share-location share
+./mc -name=MyNode set multi-acks 1
+./mc -name=MyNode telemetry
 ```
 
 - A T1000-E has no battery-backed clock, so its time drifts back after every
-  reboot; `-sync-clock` fixes that. The firmware refuses to move a clock backwards.
-- `-set-radio` is saved by the node. Nodes on different radio settings cannot hear
+  reboot; `clock sync` fixes that. The firmware refuses to move a clock backwards.
+- `radio set` is saved by the node. Nodes on different radio settings cannot hear
   each other, but the Bluetooth link is unaffected, so you can always set it back.
   The companion has no `tempradio` (no automatic revert).
-- `-telemetry` with `-repeater=<name> -password=...` asks a repeater for its sensor
-  readings (the CLI has no `telemetry` command; this is a separate radio request,
-  like `-status`). Without `-repeater` it shows
-  the companion's own sensors: battery, temperature and, with a GPS
-  fix, the position (`0,0` means no fix yet).
-- `-share-location` and `-multi-acks` are written together by the firmware; `mc`
-  reads the current values first so the other one is kept.
-- `-watch=5m` without `-repeater` polls the companion's own statistics, with `-csv`,
-  `-json`, `-min-battery` and `-max-noise` as for a repeater.
+- `telemetry` shows the node's own sensors: battery, temperature and, with a GPS
+  fix, the position (`0,0` means no fix yet). For a repeater use
+  `repeater NAME telemetry`.
+- `set share-location` and `set multi-acks` are written together by the firmware;
+  `mc` reads the current values first so the other one is kept.
 
 ### Contacts, channels and neighbours
 
 ```
-./mc -name=MyNode -auto-add=show
-./mc -name=MyNode -auto-add=repeater,room -auto-add-max-hops=2 -auto-add-overwrite=on
-./mc -name=MyNode -auto-add=all                 # the default: save every advert
-./mc -name=MyNode -path-hash-mode=1
-./mc -name=MyNode -discover=repeater            # who is in direct range?
-./mc -name=MyNode -remove-contact=SomeNode
-./mc -name=MyNode -remove-channel='#test'       # by name or slot number
+./mc -name=MyNode auto-add show
+./mc -name=MyNode auto-add -max-hops=2 -overwrite=on repeater,room
+./mc -name=MyNode auto-add all                 # the default: save every advert
+./mc -name=MyNode path-hash 1
+./mc -name=MyNode discover repeater            # who is in direct range?
+./mc -name=MyNode contact remove SomeNode
+./mc -name=MyNode channel remove '#test'       # by name or slot number
 ```
 
-- `-auto-add` chooses which adverts the node saves as contacts: `all`, `none`, or a list of
+- `auto-add` chooses which adverts the node saves as contacts: `all`, `none`, or a list of
   `chat`, `repeater`, `room`, `sensor`. A list or `none` turns on the node's "manual add" switch
-  (otherwise the type list is ignored); `all` turns it off. `-auto-add-max-hops` limits it to
-  nodes within that many hops (0 = any), and `-auto-add-overwrite=on` lets a full node
+  (otherwise the type list is ignored); `all` turns it off. `-max-hops` limits it to
+  nodes within that many hops (0 = any), and `-overwrite=on` lets a full node
   replace its oldest contact. Adverts that are not saved still show up as "new advert" pushes.
-- `-path-hash-mode` sets how many bytes of each hop's hash flood packets carry (mode + 1).
-  The current mode is in the node info.
-- `-discover` sends a one-hop request and lists the nodes that answer, with the SNR each
+- `path-hash` sets how many bytes of each hop's hash flood packets carry (mode + 1).
+  The current mode is in `info`.
+- `discover` sends a one-hop request and lists the nodes that answer, with the SNR each
   heard the other at. Names come from the contact cache. Repeaters answer at most 4 times in
   2 minutes, so repeat it sparingly.
-- `-remove-contact` deletes a contact from the node and from the local cache. The node saves
+- `contact remove` deletes a contact from the node and from the local cache. The node saves
   it again when it hears another advert, if auto-add allows that type.
-- `-remove-channel` empties a slot. The firmware has no delete: it accepts an empty name and
-  zero secret and then ignores the slot. Slot 0 (Public) needs `-channel-overwrite`.
+- `channel remove` empties a slot. The firmware has no delete: it accepts an empty name and
+  zero secret and then ignores the slot. Slot 0 (Public) needs `-overwrite`.
 
 ### GPS on the companion
 
 ```
-./mc -name=MyNode -gps=on
-./mc -name=MyNode -gps=off
-./mc -name=MyNode -gps-interval=60
+./mc -name=MyNode gps            # show
+./mc -name=MyNode gps on
+./mc -name=MyNode gps off
+./mc -name=MyNode gps -interval=60
 ```
 
-Needs a build with GPS; `-vars` shows a `gps` variable if there is one. The
+Needs a build with GPS; `vars` shows a `gps` variable if there is one. The
 T1000-E on v1.18.0 has `gps` but rejects `gps_interval` (`ILLEGAL_ARG`), so
-`-gps-interval` works only on builds that list that variable.
+`-interval` works only on builds that list that variable.
 
 ### Advertise the companion
 
 ```
-./mc -name=MyNode -advert=flood
-./mc -name=MyNode -advert=zerohop
+./mc -name=MyNode advert flood
+./mc -name=MyNode advert zerohop
 ```
 
 Makes the companion broadcast its own advertisement, which is how other nodes
-learn it exists and add it to their contact lists. Use it after flashing a new
-node, or when others cannot see yours.
-
-- `flood`: repeaters rebroadcast it across the mesh, so distant nodes hear it.
-- `zerohop`: only nodes in direct radio range hear it.
-
-Nodes limit how often they accept adverts, so do not repeat it in a loop.
-A node needs a name set before others can show anything useful for it.
+learn it exists. A flood advert is repeated by repeaters across the mesh; a
+zero-hop advert is heard only by nodes in direct radio range.
 
 ### Send a direct message
 
 ```
-./mc -name=MyNode -dm="Some Contact" -text="hello"
+./mc -name=MyNode dm "Some Contact" hello there
 ```
 
 Sends a private message to a contact (name, hex key prefix, or full key; the same
-lookup as `-repeater`) and waits for the recipient's acknowledgement. Unlike
+lookup as `repeater`) and waits for the recipient's acknowledgement. Unlike
 channel messages, direct messages are acknowledged, so this tells you whether it
 arrived.
 
@@ -312,49 +313,53 @@ The recipient needs to be in the node's contact list.
 ### Administer a repeater
 
 ```
-./mc -name=MyNode -repeater=MyRepeater -password=... -status
-./mc -name=MyNode -repeater=MyRepeater -password=... -cmd=ver -cmd="get name"
+./mc -name=MyNode repeater -password=... MyRepeater status
+./mc -name=MyNode repeater -password=... MyRepeater cmd ver
+./mc -name=MyNode repeater -password=... -c ver -c "get name" MyRepeater
+./mc -name=MyNode repeater -password=... MyRepeater status telemetry cmd get name
 ```
 
 `mc` logs in through the companion, runs what you asked for, and logs out.
+After the repeater's name come the things to do, in order: `status`, `telemetry`,
+`watch <interval>` and `cmd <text...>` (the rest of the line is one command; use `-c`
+before the name for several). With none of them, `status`.
 The password is the **repeater's admin password**, not the BLE PIN. A wrong
 password gets no reply at all, and `mc` reports "wrong password or repeater out
 of range" after about 25 seconds. Set `MC_PASSWORD` instead of `-password` to
 keep it out of the process list.
 
-`-repeater` takes a contact name, a hex key prefix (6+ hex digits) or a full
+The repeater is a contact name, a hex key prefix (6+ hex digits) or a full
 64-digit key. A full key needs no lookup. Otherwise the repeater has to be in
 the node's contact list, which is slow to download the first time. `mc` keeps a
 cache per node in `~/Library/Caches/mc/contacts-<name>.json` (`os.UserCacheDir`),
 together with the timestamp of the last sync. When a name is not in the cache it
 syncs again, and a sync only asks the node for contacts added or changed since
-that timestamp, so after the first download it takes seconds. `-contacts` does
+that timestamp, so after the first download it takes seconds. `contacts` does
 the same sync on demand and lists everything.
 
 An incremental sync cannot learn that a contact was *deleted* on the node. If
-the cache drifts, or the node was reset, run `-full-sync` to discard it and
+the cache drifts, or the node was reset, run `contacts -full` to discard it and
 download everything again.
 
-`-cmd` can be repeated. Each command waits for its reply, up to `-cmd-timeout`
-(default 30 s) and a quiet period of 3 s after the last reply line. The
-available commands are in [CLI.md](CLI.md).
+Each command waits for its reply, up to `-timeout` (default 30 s) and a quiet period of 3 s
+after the last reply line. The available commands are in [CLI.md](CLI.md).
 
 **Safe mode is on by default.** Only known read-only commands are accepted
 (`ver`, `get ...`, `neighbors`, `clock`, ...). Anything else, including
 `set`, `advert`, `reboot` and unknown commands, is refused before anything is
-sent. Use `-safe=false` to allow changes.
+sent. Use `-safe=false` (an option before the command) to allow changes.
 
 ### Watch a repeater
 
 ```
-MC_PASSWORD=... ./mc -name=MyNode -repeater=MyRepeater -watch=5m -csv=repeater.csv
+MC_PASSWORD=... ./mc -name=MyNode repeater -csv=repeater.csv MyRepeater watch 5m
 ```
 
-`-watch=<interval>` stays connected and reads the repeater's status every
+`watch <interval>` stays connected and reads the repeater's status every
 interval until you press Ctrl-C. It logs in once, so there is no pairing or
 login on each reading. Each reading prints one line; the thresholds
 (`-min-battery`, `-max-noise`) print an `ALERT:` line when crossed, and the
-program keeps running. `-watch` cannot be combined with `-cmd`.
+program keeps running. `watch` cannot be combined with commands.
 
 - `-csv=<file>` appends each successful reading to a CSV file, writing the
   header when the file is new. Columns: `time`, `battery_v`, `uptime_s`,
@@ -371,10 +376,10 @@ program keeps running. `-watch` cannot be combined with `-cmd`.
 ### Reconnection
 
 The companion drops the Bluetooth link now and then (the protocol doc says it
-may disconnect after inactivity). `-watch` and a long `-listen` check the link
+may disconnect after inactivity). `watch` and `messages -listen` check the link
 and, when it drops, reconnect with exponential backoff (2 s, 4 s, ... up to 1
-minute) until it works or you press Ctrl-C. After a reconnect `-watch` logs in
-to the repeater again, and `-listen` fetches the messages it missed.
+minute) until it works or you press Ctrl-C. After a reconnect a repeater `watch` logs in
+to the repeater again, and `messages -listen` fetches the messages it missed.
 
 ### GPS on a repeater
 
@@ -382,26 +387,26 @@ A repeater with a GPS stores its position for adverts; the GPS only needs to run
 long enough to get a fix. With the repeater outdoors:
 
 ```
-./mc -name=MyNode -repeater=MyRepeater -password=... -safe=false -cmd="gps on"
-./mc -name=MyNode -repeater=MyRepeater -password=... -cmd="gps"          # wait for "on, active, fix, N sats"
-./mc -name=MyNode -repeater=MyRepeater -password=... -safe=false -cmd="gps setloc" -cmd="get lat" -cmd="get lon" -cmd="gps off"
+./mc -name=MyNode -safe=false repeater -password=... MyRepeater cmd gps on
+./mc -name=MyNode repeater -password=... MyRepeater cmd gps          # wait for "on, active, fix, N sats"
+./mc -name=MyNode -safe=false repeater -password=... -c "gps setloc" -c "get lat" -c "get lon" -c "gps off" MyRepeater
 ```
 
 `gps setloc` copies the fix into the repeater's stored location (`get lat` and
 `get lon` read that stored value, not the live GPS), and the stored location stays
 after `gps off`. `sensor list` shows which sensor settings the build has, the
-repeater's counterpart of `-vars`. See [CLI.md](CLI.md).
+repeater's counterpart of `vars`. See [CLI.md](CLI.md).
 
 ### Monitoring and cron
 
 ```
-MC_PASSWORD=... ./mc -name=MyNode -repeater=MyRepeater \
-  -status -json -min-battery=3.6 -max-noise=-100
+MC_PASSWORD=... ./mc -json -name=MyNode repeater -min-battery=3.6 -max-noise=-100 MyRepeater status
 ```
 
-- `-status` reads the repeater's statistics: battery, uptime, noise floor,
+- `status` reads the repeater's statistics: battery, uptime, noise floor,
   last RSSI/SNR, packet counts, duplicates, receive errors and airtime.
-- `-json` prints one JSON object on stdout; all progress text goes to stderr.
+- `-json` (an option before the command) prints one JSON object on stdout; all
+  progress text goes to stderr.
 - `-min-battery=<volts>` and `-max-noise=<dBm>` raise an alert when crossed
   (0 turns a limit off).
 
@@ -412,6 +417,7 @@ Exit codes:
 | 0 | everything worked and no limit was crossed |
 | 1 | failure: not found, connect or pairing failed, login failed, no reply, command refused |
 | 2 | the run worked but a limit was crossed (see `alerts`) |
+| 64 | wrong usage: unknown command, missing or bad arguments |
 
 Example output:
 
@@ -441,61 +447,32 @@ before the repeater step (no device found, connect failed) exit 1 with the
 error on stderr and **nothing on stdout**, so a wrapper should treat empty
 output plus a non-zero exit as a failure.
 
-## Flags
+## Options and commands
 
-| Flag | Default | Meaning |
+Options come before the command.
+
+| Option | Default | Meaning |
 | --- | --- | --- |
 | `-name` | | companion name: what follows the first `-` of its Bluetooth name (`MeshCore-MyNode` is `MyNode`), or the full name |
-| `-v` | off | log every raw protocol frame (`->` sent, `<-` received) |
-| `-listen` | 15s | how long to wait for new messages (reconnects if the link drops); `0` syncs once and exits |
-| `-contacts` | off | sync and list contacts; after the first download only changes are fetched |
-| `-full-sync` | off | discard the contact cache and download every contact again (implies `-contacts`) |
-| `-healthcheck` | | code to send on `#healthcheck`, then exit |
-| `-healthcheck-wait` | 0 | wait this long for the code to appear on the channel |
-| `-serial` | | connect over USB serial: the port, or `list` to show the ports |
-| `-serial-cli` | off | with `-serial`: the port is a repeater or room server's text console; `-cmd`, `-status` and `-watch` run on it directly |
+| `-serial` | | connect over USB serial instead: the port (see `mc ports`) |
 | `-baud` | 115200 | with `-serial`: baud rate |
-| `-repeater` | | repeater to administer: name, hex key prefix or full key |
-| `-password` | | repeater admin password (or `MC_PASSWORD`) |
-| `-set-name` | | set the name the companion advertises (max 31 bytes) |
-| `-set-position` | | set the advertised position, `<lat>,<lon>` in degrees |
-| `-add-channel` | | add a channel; `#hashtag` names need no secret |
-| `-channel-secret` | | with `-add-channel`: 32 hex digits, or `random` |
-| `-channel-slot` | -1 | with `-add-channel`: slot to use (default: first empty) |
-| `-channel-overwrite` | off | with `-add-channel`: replace a channel already in the slot |
-| `-vars` | off | list the companion's custom variables, which show what its board supports (GPS, sensors) |
-| `-set-radio` | | set the radio: `<freq MHz>,<bw kHz>,<sf>,<cr>` (saved) |
-| `-sync-clock` | off | set the companion's clock from this computer |
-| `-clock` | off | print the companion's clock |
-| `-rx-delay` | | receive delay base, 0..20 |
-| `-airtime-factor` | | airtime factor, 0..9 |
-| `-tuning` | off | print the receive delay and airtime factor |
-| `-share-location` | | `share` or `none`: whether adverts carry the location |
-| `-multi-acks` | | extra acks to send, 0..255 |
-| `-telemetry` | off | print sensor readings: the repeater's with `-repeater`, otherwise the companion's own (battery, temperature, GPS) |
-| `-auto-add` | | which adverts become contacts: `all`, `none`, a list of types, or `show` |
-| `-auto-add-overwrite` | | `on` or `off`: replace the oldest contact when full |
-| `-auto-add-max-hops` | | only auto-add nodes within this many hops (0 = any) |
-| `-path-hash-mode` | | bytes per hop hash in flood packets, minus one (0..2) |
-| `-discover` | | list nodes in direct range: `all` or a list of types |
-| `-discover-wait` | 8s | how long to collect discovery answers |
-| `-remove-contact` | | delete a contact from the node and the cache |
-| `-remove-channel` | | empty a channel slot (number or name) |
-| `-gps` | | switch the companion's GPS `on` or `off` (builds with GPS only) |
-| `-gps-interval` | -1 | GPS update interval in seconds, 0..86400 (only on builds that list `gps_interval`) |
-| `-advert` | | make the companion advertise itself: `flood` or `zerohop` |
-| `-dm` | | send a direct message to this contact; needs `-text` |
-| `-text` | | the message for `-dm` |
-| `-status` | off | print statistics: the repeater's with `-repeater`, otherwise the companion's own |
-| `-watch` | 0 | read status every interval (for example `5m`) until Ctrl-C; the repeater's with `-repeater`, otherwise the companion's own |
-| `-csv` | | with `-watch`: append each reading to this CSV file |
-| `-cmd` | | CLI command to run on the repeater, or on the companion itself without `-repeater`; repeatable |
-| `-reconnect-wait` | 2m | after a `-cmd=reboot` on the companion, how long to wait for it to come back; `0` doesn't reconnect |
-| `-cmd-timeout` | 30s | how long to wait for each command's reply |
-| `-safe` | **true** | only allow read-only commands; `-safe=false` allows anything |
+| `-console` | off | with `-serial`: the port is a repeater or room server's text console |
 | `-json` | off | JSON result on stdout, progress on stderr |
-| `-min-battery` | 0 | alert below this many volts |
-| `-max-noise` | 0 | alert above this noise floor in dBm |
+| `-safe` | **true** | only run CLI commands known to be read-only; `-safe=false` allows anything |
+| `-reconnect-wait` | 2m | after a reboot, how long to wait for the node to come back; `0` doesn't reconnect |
+| `-cmd-timeout` | 30s | how long to wait for each CLI command's reply |
+| `-v` | off | log every raw protocol frame (`->` sent, `<-` received) |
+
+| Command | What it does |
+| --- | --- |
+| `info`, `vars`, `status`, `watch`, `telemetry` | look at the node |
+| `clock`, `radio`, `tuning`, `gps`, `advert`, `set`, `auto-add`, `path-hash` | read or change its settings |
+| `messages`, `dm`, `send`, `healthcheck` | messages |
+| `contacts`, `contact`, `channels`, `channel` | contacts and channels |
+| `discover`, `repeater`, `cli` | the network, a repeater, a CLI command on the node |
+| `scan`, `ports`, `help` | find nodes, list serial ports, help |
+
+`mc help` has the arguments of each; `mc help <command>` its options.
 
 ## Things to know
 
@@ -505,8 +482,8 @@ output plus a non-zero exit as a failure.
 - **Repeater commands can be disruptive.** `reboot`, `poweroff`, `set radio` and
   friends change a node you may not be able to reach again. That is why safe
   mode exists. See [CLI.md](CLI.md).
-- **`-watch` is not for cron.** It runs until stopped, so use it under something
-  like `launchd` or `tmux`. For a periodic check, run a one-shot `-status -json`
+- **`watch` is not for cron.** It runs until stopped, so use it under something
+  like `launchd` or `tmux`. For a periodic check, run a one-shot `status -json`
   from cron instead.
 - **Login and status are slow.** They cross the radio, usually as a flood. Each
   waits 8+ seconds per attempt, with up to 3 attempts.
@@ -535,13 +512,19 @@ the `mc` command in `cmd/mc`.
 | `node.go` | configure the node itself: name, position, channels |
 | `dm.go` | direct messages: send, acknowledgement, retry and path reset |
 | `repeater.go` | repeater login, CLI commands, status, `IsReadOnlyCommand`, `FindContact` |
+| `push.go` | the push dispatcher: `Subscribe`, one copy of each unsolicited frame per subscriber |
+| `transport.go`, `serial.go`, `console.go` | Bluetooth and USB serial transports, and a repeater's text console |
 | `link.go` | `Scan`, `Dial`, and `Link`: connect with pairing retry, detect a dropped connection, reconnect with backoff |
 | `log.go` | `Logf` and `Debug`, the library's only output |
 | `status_test.go` | library tests: status parsing, JSON, thresholds, the read-only allowlist |
-| `cmd/mc/main.go` | flags, output, JSON, exit codes, the run modes |
-| `cmd/mc/setup.go` | the `-set-name`, `-set-position`, `-add-channel` and `-advert` actions |
-| `cmd/mc/dm.go` | the `-dm` run mode |
-| `cmd/mc/watch.go` | the `-watch` loop and CSV logging |
+| `cmd/mc/main.go` | the options, and running one command |
+| `cmd/mc/session.go` | `session`: the connection a command runs on, and `splitArgs` |
+| `cmd/mc/commands.go` | the command registry, flag helpers, `help` |
+| `cmd/mc/cmd_node.go`, `cmd_mesh.go` | the commands |
+| `cmd/mc/ops.go` | what the commands call: repeater run, CLI on the node, statistics |
+| `cmd/mc/setup.go` | the node actions (name, position, channels, radio, auto-add, discovery, ...) |
+| `cmd/mc/dm.go` | direct messages |
+| `cmd/mc/watch.go` | the `watch` loops and CSV logging |
 | `cmd/mc/contacts.go` | the on-disk contact cache and name lookup |
 | `CLI.md` | repeater CLI reference |
 

@@ -61,6 +61,9 @@ func isCompanion(hasService bool, name string) bool {
 	return hasService || strings.HasPrefix(name, knownPrefix)
 }
 
+// ErrScanOnly is what Scan returns when it was given no name: it only listed what it saw.
+var ErrScanOnly = errors.New("no name given; the companions seen were logged")
+
 // Scan looks for the companion called name (see nameMatches) and returns it once
 // found. Devices are recognised by the service UUID they advertise, or by the
 // "MeshCore-" name prefix. With an empty name it lists the nodes it sees through
@@ -103,7 +106,7 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 	}
 	if !found {
 		if name == "" {
-			return target, errors.New("no name given; the companions seen were logged")
+			return target, ErrScanOnly
 		}
 		return target, fmt.Errorf("device %q not found after %s (is it on, in range and not connected to another app?)", name, limit)
 	}
@@ -280,4 +283,10 @@ func connectAndHandshake(addr bluetooth.Address, hub *pushHub) (device bluetooth
 		return device, nil, nil, err
 	}
 	return device, client, self, nil
+}
+
+// FindCompanion scans for the companion called name and returns its address.
+func FindCompanion(name string) (bluetooth.Address, error) {
+	r, err := Scan(name)
+	return r.Address, err
 }

@@ -28,8 +28,6 @@ type dmResult struct {
 // message that was sent but not acknowledged may still have arrived; the radio
 // gives no certainty either way.
 func runDM(ctx context.Context, l *meshgore.Link, node, target, text string, jsonOut bool, out io.Writer) int {
-	defer l.Close()
-
 	var res dmResult
 	defer func() {
 		if jsonOut {

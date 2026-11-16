@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -222,8 +223,7 @@ func (s *consoleSource) Reconnect(ctx context.Context) error {
 
 // watchCompanion reads a node's own statistics every interval until ctx is
 // cancelled, surviving dropped connections.
-func watchCompanion(ctx context.Context, src statsSource, interval time.Duration, csvPath string, limits meshgore.Thresholds, asJSON bool, out *os.File) int {
-	defer src.Close()
+func watchCompanion(ctx context.Context, src statsSource, interval time.Duration, csvPath string, limits meshgore.Thresholds, asJSON bool, out io.Writer) int {
 	var csvw *csv.Writer
 	if csvPath != "" {
 		w, f, err := openCSV(csvPath)

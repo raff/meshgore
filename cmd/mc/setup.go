@@ -112,7 +112,6 @@ func firstEmptySlot(used []*meshgore.Channel, max int) (int, bool) {
 // Everything is checked before the first change, so a typo in a later flag does
 // not leave the node half configured.
 func runNodeActions(l *meshgore.Link, a nodeActions) int {
-	defer l.Close()
 	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
 
 	var lat, lon float64
