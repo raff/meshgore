@@ -117,6 +117,7 @@ type Link struct {
 	Device bluetooth.Device
 	Port   string // serial: the port, instead of Addr and Device
 	Baud   int
+	hub    *pushHub // unsolicited frames; outlives the Client, which a reconnect replaces
 	Client *Client
 	Self   *SelfInfo // the node's own details, from the first handshake
 }
@@ -126,9 +127,9 @@ type Link struct {
 // trigger OS pairing, after which the connection can go stale; reconnecting
 // once the bond exists works, so it tries up to 3 times.
 func Dial(addr bluetooth.Address) (*Link, error) {
-	l := &Link{Addr: addr}
+	l := &Link{Addr: addr, hub: newPushHub()}
 	for attempt := 1; ; attempt++ {
-		device, client, self, err := connectAndHandshake(addr)
+		device, client, self, err := connectAndHandshake(addr, l.hub)
 		if err == nil {
 			l.Device, l.Client, l.Self = device, client, self
 			return l, nil
@@ -165,13 +166,13 @@ func (l *Link) disconnect() {
 // connect makes one attempt to connect again and replaces l.Client on success.
 func (l *Link) connect() error {
 	if l.Port != "" {
-		client, _, err := serialConnect(l.Port, l.Baud)
+		client, _, err := serialConnect(l.Port, l.Baud, l.hub)
 		if err == nil {
 			l.Client = client
 		}
 		return err
 	}
-	device, client, _, err := connectAndHandshake(l.Addr)
+	device, client, _, err := connectAndHandshake(l.Addr, l.hub)
 	if err == nil {
 		l.Device, l.Client = device, client
 	}
@@ -208,7 +209,7 @@ func (l *Link) Close() { l.disconnect() }
 // connectAndHandshake connects, discovers the service and characteristics,
 // subscribes to notifications and runs APP_START and DEVICE_QUERY. On error the
 // connection is closed.
-func connectAndHandshake(addr bluetooth.Address) (device bluetooth.Device, client *Client, self *SelfInfo, err error) {
+func connectAndHandshake(addr bluetooth.Address, hub *pushHub) (device bluetooth.Device, client *Client, self *SelfInfo, err error) {
 	// The BLE library can panic on a half-connected peripheral (seen on macOS
 	// right after the node reboots); report that as a failed attempt so callers
 	// retry instead of crashing.
@@ -265,7 +266,7 @@ func connectAndHandshake(addr bluetooth.Address) (device bluetooth.Device, clien
 	logf("RX (write):   %s", rx.UUID().String())
 	logf("TX (notify):  %s", tx.UUID().String())
 
-	client, err = NewClient(rx, tx)
+	client, err = newBLEClient(rx, tx, hub)
 	if err != nil {
 		return device, nil, nil, err
 	}

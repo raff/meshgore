@@ -209,18 +209,18 @@ func parseLPP(b []byte) (out []Reading, rest []byte) {
 // SelfTelemetry asks the node for its own sensor readings (battery, temperature,
 // and GPS position on a node with a fix). The answer is a push frame.
 func (c *Client) SelfTelemetry() ([]Reading, error) {
+	sub := c.Subscribe(pushTelemetry)
+	defer sub.Close()
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	for len(c.Push) > 0 && len(c.Push) > cap(c.Push)-1 { // never block on a full queue
-		<-c.Push
-	}
-	if err := c.write([]byte{cmdSelfTelemetry, 0, 0, 0}); err != nil {
+	err := c.write([]byte{cmdSelfTelemetry, 0, 0, 0})
+	c.mu.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("SEND_TELEMETRY_REQ: %w", err)
 	}
 	deadline := time.After(defaultTimeout)
 	for {
 		select {
-		case f := <-c.Push:
+		case f := <-sub.C:
 			if f[0] != pushTelemetry || len(f) < 8 {
 				continue
 			}
@@ -259,6 +259,8 @@ func telemetryReadings(f []byte) []Reading {
 // answers only if its permissions allow it.
 func (c *Client) RequestTelemetry(key [32]byte) ([]Reading, error) {
 	cmd := append([]byte{cmdSelfTelemetry, 0, 0, 0}, key[:]...)
+	sub := c.Subscribe(pushTelemetry)
+	defer sub.Close()
 	for attempt := 1; attempt <= loginAttempts; attempt++ {
 		suggested, err := c.sendAccepted(cmd)
 		if err != nil {
@@ -272,7 +274,7 @@ func (c *Client) RequestTelemetry(key [32]byte) ([]Reading, error) {
 	recv:
 		for {
 			select {
-			case f := <-c.Push:
+			case f := <-sub.C:
 				if f[0] != pushTelemetry || len(f) < 8 || string(f[2:8]) != string(key[:6]) {
 					continue
 				}

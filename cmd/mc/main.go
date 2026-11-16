@@ -241,7 +241,10 @@ func main() {
 		os.Exit(runHealthcheck(l, channels, *healthcheck, *hcWait, printMessages))
 	}
 
-	// Print queued messages, then new ones as the device announces them.
+	// Print queued messages, then new ones as the device announces them. The link's
+	// subscription outlives a reconnect, so it is made once, before the first sync.
+	waiting := l.Subscribe(meshgore.PushMsgWaiting)
+	defer waiting.Close()
 	printMessages()
 
 	if *listen == 0 {
@@ -253,10 +256,8 @@ func main() {
 	defer check.Stop()
 	for {
 		select {
-		case f := <-l.Client.Push: // re-evaluated each loop: the client changes on reconnect
-			if f[0] == meshgore.PushMsgWaiting {
-				printMessages()
-			}
+		case <-waiting.C:
+			printMessages()
 		case <-check.C:
 			if l.Alive() {
 				continue
@@ -420,6 +421,8 @@ func runRepeater(ctx context.Context, l *meshgore.Link, o repeaterOpts) int {
 func runHealthcheck(l *meshgore.Link, channels []*meshgore.Channel, code string, wait time.Duration, printMessages func() []*meshgore.Message) int {
 	defer l.Close()
 	client := l.Client
+	waiting := l.Subscribe(meshgore.PushMsgWaiting) // before sending: the echo may come back at once
+	defer waiting.Close()
 
 	var hc *meshgore.Channel
 	for _, ch := range channels {
@@ -452,10 +455,7 @@ func runHealthcheck(l *meshgore.Link, channels []*meshgore.Channel, code string,
 	defer poll.Stop()
 	for {
 		select {
-		case f := <-client.Push:
-			if f[0] != meshgore.PushMsgWaiting {
-				continue
-			}
+		case <-waiting.C:
 		case <-poll.C:
 		case <-deadline:
 			fmt.Println("healthcheck FAILED: not seen before timeout")

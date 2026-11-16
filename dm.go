@@ -103,6 +103,8 @@ func (c *Client) SendMessageWithRetry(ctx context.Context, to [32]byte, text str
 	if text == "" {
 		return nil, errors.New("empty message")
 	}
+	sub := c.Subscribe(pushAck) // before the first send: an ack can come back at once
+	defer sub.Close()
 	ts := uint32(time.Now().Unix())
 	d := &Delivery{}
 	sent := map[[4]byte]bool{}
@@ -140,7 +142,7 @@ func (c *Client) SendMessageWithRetry(ctx context.Context, to [32]byte, text str
 			wait = 2 * time.Second
 		}
 		logf("attempt %d sent (%s); waiting up to %s for the ack", d.Attempts, routeName(d.Flood), wait.Round(time.Millisecond))
-		ok, trip, err := c.awaitAck(ctx, sent, wait)
+		ok, trip, err := c.awaitAck(ctx, sub, sent, wait)
 		if err != nil {
 			return d, err
 		}
@@ -165,28 +167,17 @@ func routeName(flood bool) string {
 	return "direct"
 }
 
-// awaitAck waits for an ACK push carrying one of the codes, and returns the
-// round-trip time the node reported in it (0 if none). Other pushes seen
-// meanwhile are put back so a later reader still gets them.
-func (c *Client) awaitAck(ctx context.Context, codes map[[4]byte]bool, wait time.Duration) (ok bool, trip time.Duration, err error) {
+// awaitAck waits on sub (a subscription to ACK pushes) for one carrying one of the
+// codes, and returns the round-trip time the node reported in it (0 if none).
+func (c *Client) awaitAck(ctx context.Context, sub *Sub, codes map[[4]byte]bool, wait time.Duration) (ok bool, trip time.Duration, err error) {
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
-	var others [][]byte
-	defer func() {
-		for _, f := range others {
-			select {
-			case c.Push <- f:
-			default:
-			}
-		}
-	}()
 	for {
 		select {
-		case f := <-c.Push:
+		case f := <-sub.C:
 			if code, trip, isAck := parseAck(f); isAck && codes[code] {
 				return true, trip, nil
 			}
-			others = append(others, f)
 		case <-timer.C:
 			return false, 0, nil
 		case <-ctx.Done():

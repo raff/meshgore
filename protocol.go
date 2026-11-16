@@ -72,23 +72,25 @@ type Client struct {
 
 	mu   sync.Mutex // serializes commands: one in flight at a time
 	resp chan []byte
-	Push chan []byte // unsolicited frames (codes >= 0x80)
+	hub  *pushHub // unsolicited frames (codes >= 0x80); see Subscribe
 }
 
 // newClient returns a client that sends its frames through tr. The transport
 // must hand every frame it receives to onNotify.
-func newClient(tr transport) *Client {
-	return &Client{
-		tr:   tr,
-		resp: make(chan []byte, 256),
-		Push: make(chan []byte, 32),
-	}
+func newClient(tr transport, hub *pushHub) *Client {
+	return &Client{tr: tr, resp: make(chan []byte, 256), hub: hub}
 }
 
 // NewClient subscribes to tx notifications and returns a ready client that
 // writes to rx. It is the Bluetooth constructor.
 func NewClient(rx, tx *bluetooth.DeviceCharacteristic) (*Client, error) {
-	c := newClient(&bleTransport{rx: rx})
+	return newBLEClient(rx, tx, newPushHub())
+}
+
+// newBLEClient is NewClient with a hub the caller owns, so a Link can keep its
+// subscribers across reconnects.
+func newBLEClient(rx, tx *bluetooth.DeviceCharacteristic, hub *pushHub) (*Client, error) {
+	c := newClient(&bleTransport{rx: rx}, hub)
 	if err := tx.EnableNotifications(c.onNotify); err != nil {
 		return nil, fmt.Errorf("enable notifications: %w", err)
 	}
@@ -104,12 +106,12 @@ func (c *Client) onNotify(buf []byte) {
 	if Debug {
 		logf("<- % x", frame)
 	}
-	ch := c.resp
 	if frame[0] >= 0x80 {
-		ch = c.Push
+		c.hub.publish(frame)
+		return
 	}
 	select {
-	case ch <- frame:
+	case c.resp <- frame:
 	default: // drop if the consumer is not keeping up
 	}
 }

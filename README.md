@@ -596,8 +596,14 @@ Things to know:
   `Acked`, since an unacknowledged message is not an error.
 - **One command at a time.** `Client` serialises commands and routes replies, so
   it is safe to call from several goroutines, but they will take turns.
-- **Unsolicited frames.** `Client.Push` delivers frames from `0x80` up. When one
-  starts with `meshgore.PushMsgWaiting`, call `SyncMessages`.
+- **Unsolicited frames.** `Client.Subscribe(codes...)` (or `Link.Subscribe`) returns a
+  `*Sub` whose channel `C` delivers pushes (frames from `0x80` up) with those codes, or all
+  of them if you give none; call `Close` when done. Every subscriber gets its own copy, so a
+  live message display and a login in progress do not take frames from each other. A
+  subscriber that stops reading loses frames (`Dropped` counts them) and never holds up
+  the others. Subscribe before sending the request whose answer you wait for. A `Link`
+  subscription survives `Reconnect`. When a frame starts with `meshgore.PushMsgWaiting`,
+  call `SyncMessages`.
 - **Platform.** It uses [tinygo.org/x/bluetooth](https://github.com/tinygo-org/bluetooth),
   so it needs the same platform setup, and the macOS pairing behaviour described above.
 
@@ -610,8 +616,8 @@ The app writes frames to RX (`6E400002-...`) and receives frames as
 notifications on TX (`6E400003-...`). One write or notification is one frame, the
 first byte is the type, and integers are little-endian. Frames below `0x80` answer the
 command in flight; frames from `0x80` up are unsolicited pushes (message waiting,
-login result, status response, ...). `mc` sends one command at a time and
-routes the two kinds to different channels.
+login result, status response, ...). `mc` sends one command at a time, routes answers to the
+command in flight, and hands pushes to a hub that gives every subscriber its own copy.
 
 ## License
 

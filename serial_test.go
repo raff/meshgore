@@ -76,7 +76,7 @@ func TestSerialClientRoundTrip(t *testing.T) {
 	app, node := net.Pipe()
 	defer node.Close()
 	go fakeNode(t, node)
-	c := newSerialClient(app)
+	c := newSerialClient(app, newPushHub())
 	defer c.tr.Close()
 
 	done := make(chan struct{})
@@ -95,7 +95,7 @@ func TestSerialClientRoundTrip(t *testing.T) {
 
 func TestSerialTransportDies(t *testing.T) {
 	app, node := net.Pipe()
-	c := newSerialClient(app)
+	c := newSerialClient(app, newPushHub())
 	node.Close() // the node went away
 	deadline := time.Now().Add(2 * time.Second)
 	for c.tr.Alive() && time.Now().Before(deadline) {

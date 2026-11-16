@@ -133,9 +133,9 @@ func (t *serialTransport) readLoop(c *Client) {
 }
 
 // newSerialClient returns a client that talks over rwc.
-func newSerialClient(rwc io.ReadWriteCloser) *Client {
+func newSerialClient(rwc io.ReadWriteCloser, hub *pushHub) *Client {
 	t := &serialTransport{port: rwc}
-	c := newClient(t)
+	c := newClient(t, hub)
 	go t.readLoop(c)
 	return c
 }
@@ -145,7 +145,7 @@ func ListSerialPorts() ([]string, error) { return serial.GetPortsList() }
 
 // serialConnect opens the port and runs the handshake. On error the port is
 // closed.
-func serialConnect(path string, baud int) (*Client, *SelfInfo, error) {
+func serialConnect(path string, baud int, hub *pushHub) (*Client, *SelfInfo, error) {
 	port, err := serial.Open(path, &serial.Mode{BaudRate: baud})
 	if err != nil {
 		return nil, nil, fmt.Errorf("open %s: %w", path, err)
@@ -153,7 +153,7 @@ func serialConnect(path string, baud int) (*Client, *SelfInfo, error) {
 	_ = port.SetReadTimeout(200 * time.Millisecond)
 	_ = port.ResetInputBuffer()
 	logf("Opened %s at %d baud", path, baud)
-	c := newSerialClient(port)
+	c := newSerialClient(port, hub)
 	self, err := c.handshake()
 	if err != nil {
 		c.tr.Close()
@@ -182,8 +182,8 @@ func DialSerial(path string, baud int) (*Link, error) {
 	if baud == 0 {
 		baud = DefaultBaud
 	}
-	l := &Link{Port: path, Baud: baud}
-	c, self, err := serialConnect(path, baud)
+	l := &Link{Port: path, Baud: baud, hub: newPushHub()}
+	c, self, err := serialConnect(path, baud, l.hub)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, err

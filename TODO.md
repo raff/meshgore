@@ -207,6 +207,15 @@ path hash mode (61) and control data for discovery (55) are done:
 - **Library API is unstable.** `Link`, `Client` and the message types may still
   change. Decide on a real module path before anyone imports it.
 
+## REPL (in progress)
+
+- **Push dispatcher: done** (`push.go`). `Client.Push` is gone; readers use `Subscribe`. Tried on
+  the T1000-E (login, status, telemetry, discovery) and in unit tests under `-race`; the live
+  `-listen` path had no traffic to show it on hardware.
+- Next: decide the command line (subcommands instead of flags) and the order of the work, then
+  the session loop, line editing with output above the prompt, and the targets described
+  in the design notes (companion, repeater via login, serial console, `cli <text>` passthrough).
+
 ## Housekeeping
 
 - A `CHANGELOG` or release notes once the library has users.

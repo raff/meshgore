@@ -52,6 +52,8 @@ const loginAttempts = 3
 func (c *Client) Login(key [32]byte, password string) error {
 	cmd := append([]byte{cmdSendLogin}, key[:]...)
 	cmd = append(cmd, password...)
+	sub := c.Subscribe(pushLoginSuccess, pushLoginFailed)
+	defer sub.Close()
 	for attempt := 1; attempt <= loginAttempts; attempt++ {
 		suggested, err := c.sendAccepted(cmd)
 		if err != nil {
@@ -61,7 +63,7 @@ func (c *Client) Login(key [32]byte, password string) error {
 		if wait < 8*time.Second {
 			wait = 8 * time.Second
 		}
-		ok, err := c.awaitLogin(key, wait)
+		ok, err := c.awaitLogin(sub, key, wait)
 		if err != nil {
 			return err
 		}
@@ -77,11 +79,11 @@ func (c *Client) Login(key [32]byte, password string) error {
 
 // awaitLogin waits for the login result push from key. It returns false on
 // timeout, and an error if the repeater rejected the login.
-func (c *Client) awaitLogin(key [32]byte, wait time.Duration) (bool, error) {
+func (c *Client) awaitLogin(sub *Sub, key [32]byte, wait time.Duration) (bool, error) {
 	deadline := time.After(wait)
 	for {
 		select {
-		case f := <-c.Push:
+		case f := <-sub.C:
 			if f[0] != pushLoginSuccess && f[0] != pushLoginFailed {
 				continue
 			}
@@ -153,6 +155,8 @@ func FindContact(contacts []*Contact, arg string) (*Contact, error) {
 // given node and then nothing more for quiet, or until timeout. It returns the
 // texts in order. Messages from other senders go to other.
 func (c *Client) CollectReplies(from [6]byte, timeout, quiet time.Duration, other func(*Message)) []string {
+	sub := c.Subscribe(pushMsgWaiting)
+	defer sub.Close()
 	var replies []string
 	deadline := time.After(timeout)
 	poll := time.NewTicker(2 * time.Second) // in case a messages-waiting push is missed
@@ -160,10 +164,7 @@ func (c *Client) CollectReplies(from [6]byte, timeout, quiet time.Duration, othe
 	var lastReply time.Time
 	for {
 		select {
-		case f := <-c.Push:
-			if f[0] != pushMsgWaiting {
-				continue
-			}
+		case <-sub.C:
 		case <-poll.C:
 			if len(replies) > 0 && time.Since(lastReply) >= quiet {
 				return replies
@@ -253,6 +254,8 @@ func parseStatus(f []byte) (*RepeaterStatus, error) {
 // arrives over the radio as a push frame, so the request is retried.
 func (c *Client) RequestStatus(key [32]byte) (*RepeaterStatus, error) {
 	cmd := append([]byte{cmdStatusReq}, key[:]...)
+	sub := c.Subscribe(pushStatusResp)
+	defer sub.Close()
 	for attempt := 1; attempt <= loginAttempts; attempt++ {
 		suggested, err := c.sendAccepted(cmd)
 		if err != nil {
@@ -266,7 +269,7 @@ func (c *Client) RequestStatus(key [32]byte) (*RepeaterStatus, error) {
 	recv:
 		for {
 			select {
-			case f := <-c.Push:
+			case f := <-sub.C:
 				if f[0] != pushStatusResp || len(f) < statusHeaderLen || string(f[2:8]) != string(key[:6]) {
 					continue
 				}

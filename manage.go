@@ -180,9 +180,8 @@ func (c *Client) Discover(types byte, wait time.Duration) ([]*Neighbor, error) {
 		return nil, err
 	}
 	tag := binary.LittleEndian.Uint32(r[:])
-	for len(c.Push) > 0 { // answers to an earlier request are not ours
-		<-c.Push
-	}
+	sub := c.Subscribe(pushControlData) // before sending, so a quick answer is not missed
+	defer sub.Close()
 	if _, err := c.Do(append([]byte{cmdSendControlData}, buildDiscover(types, tag)...), respOK); err != nil {
 		return nil, fmt.Errorf("SEND_CONTROL_DATA: %w", err)
 	}
@@ -191,7 +190,7 @@ func (c *Client) Discover(types byte, wait time.Duration) ([]*Neighbor, error) {
 	deadline := time.After(wait)
 	for {
 		select {
-		case f := <-c.Push:
+		case f := <-sub.C:
 			if n, ok := parseDiscoverResponse(f, tag); ok && !seen[string(n.Key)] {
 				seen[string(n.Key)] = true
 				out = append(out, n)
