@@ -107,9 +107,9 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    no prompt, and `stats-*`, `log`, `erase` and `get prv.key` work on serial only. Still to check:
    the 600 ms quiet window against a long reply (the repeater's log was empty, so `log`
    only returned `EOF`; try after `log start`), `reboot` and reopen, a room server (it
-   also echoes LF), and `-status`/`-watch` over the console: `stats-core`, `stats-radio`
-   and `stats-packets` answer with JSON, so they could fill the same status output as
-   a repeater reached over the radio.
+   also echoes LF),.
+   `-status`, `-watch`, `-csv` and the alert thresholds work over the console (they use
+   the three JSON `stats-*` commands).
 3. **Wi-Fi (TCP) companion**, lowest priority. Builds with `ENABLE_WIFI_INTERFACE` serve
    the same `<`/`>` framed protocol on a TCP port (default 5000, per the firmware source).
    With the transport interface in place this is a small addition: `-tcp=host:port`

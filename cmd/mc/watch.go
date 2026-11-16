@@ -183,10 +183,47 @@ func companionCSVRow(r companionRecord) []string {
 	}
 }
 
-// watchCompanion reads the companion's own statistics every interval until ctx
-// is cancelled, surviving dropped Bluetooth connections.
-func watchCompanion(ctx context.Context, l *meshgore.Link, interval time.Duration, csvPath string, limits meshgore.Thresholds, asJSON bool, out *os.File) int {
-	defer l.Close()
+// statsSource is a node whose own statistics can be read: a companion, or a
+// repeater's serial console.
+type statsSource interface {
+	Stats() (*meshgore.CompanionStats, error)
+	Alive() bool
+	Reconnect(ctx context.Context) error
+	Close()
+	Name() string
+}
+
+// linkSource reads a companion's statistics over its link.
+type linkSource struct{ l *meshgore.Link }
+
+func (s linkSource) Stats() (*meshgore.CompanionStats, error) { return s.l.Client.Stats() }
+func (s linkSource) Alive() bool                              { return s.l.Alive() }
+func (s linkSource) Reconnect(ctx context.Context) error      { return s.l.Reconnect(ctx) }
+func (s linkSource) Close()                                   { s.l.Close() }
+func (s linkSource) Name() string                             { return "the companion" }
+
+// consoleSource reads a repeater's statistics over its serial console.
+type consoleSource struct {
+	c       *meshgore.Console
+	timeout time.Duration
+}
+
+func (s *consoleSource) Stats() (*meshgore.CompanionStats, error) { return s.c.Stats(s.timeout) }
+func (s *consoleSource) Alive() bool                              { return s.c.Alive() }
+func (s *consoleSource) Close()                                   { s.c.Close() }
+func (s *consoleSource) Name() string                             { return "the node" }
+func (s *consoleSource) Reconnect(ctx context.Context) error {
+	n, err := s.c.Reopen(ctx)
+	if err == nil {
+		s.c = n
+	}
+	return err
+}
+
+// watchCompanion reads a node's own statistics every interval until ctx is
+// cancelled, surviving dropped connections.
+func watchCompanion(ctx context.Context, src statsSource, interval time.Duration, csvPath string, limits meshgore.Thresholds, asJSON bool, out *os.File) int {
+	defer src.Close()
 	var csvw *csv.Writer
 	if csvPath != "" {
 		w, f, err := openCSV(csvPath)
@@ -199,7 +236,7 @@ func watchCompanion(ctx context.Context, l *meshgore.Link, interval time.Duratio
 		fmt.Println("Logging readings to", csvPath)
 	}
 	enc := json.NewEncoder(out)
-	fmt.Printf("Watching the companion every %s (Ctrl-C to stop)\n", interval)
+	fmt.Printf("Watching %s every %s (Ctrl-C to stop)\n", src.Name(), interval)
 
 	for first := true; ; first = false {
 		if !first {
@@ -210,13 +247,13 @@ func watchCompanion(ctx context.Context, l *meshgore.Link, interval time.Duratio
 			}
 		}
 		rec := companionRecord{Time: time.Now()}
-		if !l.Alive() {
-			fmt.Println("connection to the companion lost; reconnecting...")
-			if err := l.Reconnect(ctx); err != nil {
+		if !src.Alive() {
+			fmt.Printf("connection to %s lost; reconnecting...\n", src.Name())
+			if err := src.Reconnect(ctx); err != nil {
 				return exitOK // cancelled while reconnecting
 			}
 		}
-		if st, err := l.Client.Stats(); err != nil {
+		if st, err := src.Stats(); err != nil {
 			rec.Error = err.Error()
 		} else {
 			rec.OK, rec.Status = true, st

@@ -49,6 +49,12 @@ func fakeConsole(conn net.Conn) {
 				conn.Write([]byte("a\r\n"))
 				time.Sleep(100 * time.Millisecond)
 				conn.Write([]byte("b\r\n  ->    EOF\r\n"))
+			case "stats-core":
+				conn.Write([]byte(`  -> {"battery_mv":4128,"uptime_secs":55420,"errors":0,"queue_len":2}` + "\r\n"))
+			case "stats-radio":
+				conn.Write([]byte(`  -> {"noise_floor":-112,"last_rssi":-117,"last_snr":-5.50,"tx_air_secs":1348,"rx_air_secs":1681}` + "\r\n"))
+			case "stats-packets":
+				conn.Write([]byte(`  -> {"recv":5260,"sent":4136,"flood_tx":4029,"direct_tx":107,"flood_rx":5095,"direct_rx":161,"recv_errors":2393}` + "\r\n"))
 			case "":
 				conn.Write([]byte("  -> Unknown command\r\n"))
 			}
@@ -79,5 +85,22 @@ func TestConsoleRun(t *testing.T) {
 	}
 	if _, err := c.Run("a\nb", time.Second); err == nil {
 		t.Error("multi-line command accepted")
+	}
+}
+
+func TestConsoleStats(t *testing.T) {
+	app, node := net.Pipe()
+	defer node.Close()
+	go fakeConsole(node)
+	c := newConsole(app)
+	defer c.Close()
+	s, err := c.Stats(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.BatteryMV != 4128 || s.Uptime != 55420*time.Second || s.QueueLen != 2 ||
+		s.NoiseFloor != -112 || s.LastRSSI != -117 || s.LastSNR != -5.5 || s.RxAirtime != 1681*time.Second ||
+		s.Received != 5260 || s.SentDirect != 107 || s.RecvFlood != 5095 || !s.HasErrors || s.RecvErrors != 2393 {
+		t.Errorf("%+v", s)
 	}
 }

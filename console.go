@@ -2,6 +2,7 @@ package meshgore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -189,4 +190,56 @@ func (c *Console) Reopen(ctx context.Context) (*Console, error) {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// Stats reads the node's statistics with stats-core, stats-radio and
+// stats-packets, which answer with JSON. These commands work on the serial
+// console only. The result has the same fields as a companion's.
+func (c *Console) Stats(timeout time.Duration) (*CompanionStats, error) {
+	get := func(cmd string, v any) error {
+		lines, err := c.Run(cmd, timeout)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal([]byte(strings.Join(lines, "")), v); err != nil {
+			return fmt.Errorf("%s: not a JSON reply: %q", cmd, strings.Join(lines, " "))
+		}
+		return nil
+	}
+	var core struct {
+		BatteryMV uint16 `json:"battery_mv"`
+		Uptime    uint32 `json:"uptime_secs"`
+		Errors    uint16 `json:"errors"`
+		QueueLen  uint8  `json:"queue_len"`
+	}
+	var radio struct {
+		Noise int16   `json:"noise_floor"`
+		RSSI  int8    `json:"last_rssi"`
+		SNR   float64 `json:"last_snr"`
+		Tx    uint32  `json:"tx_air_secs"`
+		Rx    uint32  `json:"rx_air_secs"`
+	}
+	var pkRaw map[string]uint32
+	s := &CompanionStats{}
+	if err := get("stats-core", &core); err != nil {
+		return nil, err
+	}
+	if err := get("stats-radio", &radio); err != nil {
+		return nil, err
+	}
+	if err := get("stats-packets", &pkRaw); err != nil {
+		return nil, err
+	}
+	s.HasCore, s.BatteryMV, s.Uptime, s.ErrorFlags, s.QueueLen =
+		true, core.BatteryMV, time.Duration(core.Uptime)*time.Second, core.Errors, core.QueueLen
+	s.HasRadio, s.NoiseFloor, s.LastRSSI, s.LastSNR = true, radio.Noise, radio.RSSI, radio.SNR
+	s.TxAirtime, s.RxAirtime = time.Duration(radio.Tx)*time.Second, time.Duration(radio.Rx)*time.Second
+	s.HasPackets = true
+	s.Received, s.Sent = pkRaw["recv"], pkRaw["sent"]
+	s.SentFlood, s.SentDirect = pkRaw["flood_tx"], pkRaw["direct_tx"]
+	s.RecvFlood, s.RecvDirect = pkRaw["flood_rx"], pkRaw["direct_rx"]
+	if v, ok := pkRaw["recv_errors"]; ok {
+		s.RecvErrors, s.HasErrors = v, true
+	}
+	return s, nil
 }

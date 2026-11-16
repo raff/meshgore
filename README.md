@@ -86,7 +86,14 @@ fails on it. Add `-serial-cli`:
 ```
 ./mc -serial=/dev/cu.usbmodem14201 -serial-cli -cmd ver -cmd stats-core
 ./mc -serial=/dev/cu.usbmodem14201 -serial-cli -safe=false -cmd reboot -cmd ver
+./mc -serial=/dev/cu.usbmodem14201 -serial-cli -status [-json] [-min-battery=3.6]
+./mc -serial=/dev/cu.usbmodem14201 -serial-cli -watch=5m -csv=repeater.csv
 ```
+
+`-status` and `-watch` run `stats-core`, `stats-radio` and `stats-packets` and print the same
+statistics as for a companion (`-json`, `-csv`, `-min-battery` and `-max-noise` work, with exit
+code 2 on an alert). Reading all three takes about 2 seconds, so a `-watch` period shorter
+than that is stretched.
 
 There is no login or password, and no radio hop; commands run on the node itself, so
 the serial-only ones work: `stats-core`, `stats-radio`, `stats-packets` and `log` are
@@ -417,7 +424,7 @@ output plus a non-zero exit as a failure.
 | `-healthcheck` | | code to send on `#healthcheck`, then exit |
 | `-healthcheck-wait` | 0 | wait this long for the code to appear on the channel |
 | `-serial` | | connect over USB serial: the port, or `list` to show the ports |
-| `-serial-cli` | off | with `-serial`: the port is a repeater or room server's text console; `-cmd` runs on it directly |
+| `-serial-cli` | off | with `-serial`: the port is a repeater or room server's text console; `-cmd`, `-status` and `-watch` run on it directly |
 | `-baud` | 115200 | with `-serial`: baud rate |
 | `-repeater` | | repeater to administer: name, hex key prefix or full key |
 | `-password` | | repeater admin password (or `MC_PASSWORD`) |

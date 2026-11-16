@@ -82,10 +82,18 @@ func main() {
 		if *serialPort == "" || *serialPort == "list" {
 			log.Fatal("-serial-cli needs -serial=<port>")
 		}
-		if len(cmds) == 0 {
-			log.Fatal("-serial-cli needs at least one -cmd")
+		if len(cmds) == 0 && !*status && *watch == 0 {
+			log.Fatal("-serial-cli needs -cmd, -status or -watch")
 		}
-		os.Exit(runConsole(ctx, *serialPort, *baud, cmds, *safe, *cmdTimeout, *reconnectWait, *jsonOut, realStdout))
+		if *watch > 0 && len(cmds) > 0 {
+			log.Fatal("-watch cannot be combined with -cmd")
+		}
+		os.Exit(runConsole(ctx, consoleOpts{
+			port: *serialPort, baud: *baud, cmds: cmds, safe: *safe, timeout: *cmdTimeout, wait: *reconnectWait,
+			status: *status, watch: *watch, csvPath: *csvPath,
+			limits: meshgore.Thresholds{MinBatteryV: *minBattery, MaxNoiseFloor: *maxNoise},
+			json:   *jsonOut, out: realStdout,
+		}))
 	}
 
 	var l *meshgore.Link
@@ -126,7 +134,7 @@ func main() {
 		log.Fatal("-watch cannot be combined with -cmd")
 	}
 	if *watch > 0 && *repeater == "" {
-		os.Exit(watchCompanion(ctx, l, *watch, *csvPath, meshgore.Thresholds{MinBatteryV: *minBattery, MaxNoiseFloor: *maxNoise}, *jsonOut, realStdout))
+		os.Exit(watchCompanion(ctx, linkSource{l}, *watch, *csvPath, meshgore.Thresholds{MinBatteryV: *minBattery, MaxNoiseFloor: *maxNoise}, *jsonOut, realStdout))
 	}
 
 	if *vars {
@@ -138,7 +146,7 @@ func main() {
 	}
 
 	if *status && *repeater == "" {
-		os.Exit(runStats(l, *jsonOut, realStdout))
+		os.Exit(runStats(linkSource{l}, meshgore.Thresholds{MinBatteryV: *minBattery, MaxNoiseFloor: *maxNoise}, *jsonOut, realStdout))
 	}
 
 	if acts := (nodeActions{
@@ -517,21 +525,33 @@ func runLocalCmds(ctx context.Context, l *meshgore.Link, cmds []string, safe boo
 	return exitOK
 }
 
-// runStats prints the companion's own statistics.
-func runStats(l *meshgore.Link, asJSON bool, out *os.File) int {
-	defer l.Close()
-	st, err := l.Client.Stats()
+// runStats prints a node's own statistics and returns exitAlert if a limit is crossed.
+func runStats(src statsSource, limits meshgore.Thresholds, asJSON bool, out *os.File) int {
+	defer src.Close()
+	return printStats(src, limits, asJSON, out)
+}
+
+// printStats reads and prints the statistics, leaving the source open.
+func printStats(src statsSource, limits meshgore.Thresholds, asJSON bool, out *os.File) int {
+	st, err := src.Stats()
 	if err != nil {
 		fmt.Println("error:", err)
 		return exitFail
 	}
+	alerts := st.Check(limits)
 	if asJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		enc.Encode(st)
-		return exitOK
+	} else {
+		fmt.Print(st)
 	}
-	fmt.Print(st)
+	for _, a := range alerts {
+		fmt.Println("ALERT:", a)
+	}
+	if len(alerts) > 0 {
+		return exitAlert
+	}
 	return exitOK
 }
 
@@ -559,27 +579,51 @@ func runVars(l *meshgore.Link) int {
 	return exitOK
 }
 
-// runConsole runs commands on a repeater or room server's serial console.
-func runConsole(ctx context.Context, port string, baud int, cmds []string, safe bool, timeout, wait time.Duration, asJSON bool, out *os.File) int {
+// consoleOpts configures runConsole.
+type consoleOpts struct {
+	port    string
+	baud    int
+	cmds    []string
+	safe    bool
+	timeout time.Duration // per command
+	wait    time.Duration // for the port to return after a reboot
+	status  bool
+	watch   time.Duration
+	csvPath string
+	limits  meshgore.Thresholds
+	json    bool
+	out     *os.File
+}
+
+// runConsole runs commands, and reads statistics, on a repeater or room server's
+// serial console.
+func runConsole(ctx context.Context, o consoleOpts) int {
 	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
-	if safe {
-		for _, c := range cmds {
+	if o.safe {
+		for _, c := range o.cmds {
 			if !meshgore.IsReadOnlyCommand(c) {
 				return fail(fmt.Errorf("%q is not a known read-only command; use -safe=false to allow it (see CLI.md)", c))
 			}
 		}
 	}
-	con, err := meshgore.OpenConsole(port, baud)
+	con, err := meshgore.OpenConsole(o.port, o.baud)
 	if err != nil {
 		return fail(err)
 	}
-	defer func() { con.Close() }()
+	src := &consoleSource{c: con, timeout: o.timeout}
+	if o.watch > 0 {
+		return watchCompanion(ctx, src, o.watch, o.csvPath, o.limits, o.json, o.out)
+	}
+	defer func() { src.c.Close() }()
 
-	var res []cmdResult
 	code := exitOK
-	for _, c := range cmds {
+	if o.status {
+		code = printStats(src, o.limits, o.json && len(o.cmds) == 0, o.out)
+	}
+	var res []cmdResult
+	for _, c := range o.cmds {
 		fmt.Printf("> %s\n", c)
-		lines, err := con.Run(c, timeout)
+		lines, err := src.c.Run(c, o.timeout)
 		if err != nil {
 			code = fail(err)
 			break
@@ -592,18 +636,17 @@ func runConsole(ctx context.Context, port string, baud int, cmds []string, safe 
 		}
 		res = append(res, cmdResult{c, lines})
 		if f := strings.Fields(c); len(f) > 0 && (f[0] == "reboot" || f[0] == "clkreboot") {
-			rctx, cancel := context.WithTimeout(ctx, wait)
-			n, err := con.Reopen(rctx)
+			rctx, cancel := context.WithTimeout(ctx, o.wait)
+			err := src.Reconnect(rctx)
 			cancel()
 			if err != nil {
-				code = fail(fmt.Errorf("the node did not come back within %s: %w", wait, err))
+				code = fail(fmt.Errorf("the node did not come back within %s: %w", o.wait, err))
 				break
 			}
-			con = n
 		}
 	}
-	if asJSON {
-		enc := json.NewEncoder(out)
+	if o.json && len(o.cmds) > 0 {
+		enc := json.NewEncoder(o.out)
 		enc.SetIndent("", "  ")
 		enc.Encode(map[string]any{"ok": code == exitOK, "commands": res})
 	}
