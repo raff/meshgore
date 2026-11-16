@@ -360,13 +360,16 @@ output plus a non-zero exit as a failure.
 | `-channel-slot` | -1 | with `-add-channel`: slot to use (default: first empty) |
 | `-channel-overwrite` | off | with `-add-channel`: replace a channel already in the slot |
 | `-vars` | off | list the companion's custom variables, which show what its board supports (GPS, sensors) |
+| `-gps` | | switch the companion's GPS `on` or `off` (builds with GPS only) |
+| `-gps-interval` | -1 | GPS update interval in seconds, 0..86400 (only on builds that list `gps_interval`) |
 | `-advert` | | make the companion advertise itself: `flood` or `zerohop` |
 | `-dm` | | send a direct message to this contact; needs `-text` |
 | `-text` | | the message for `-dm` |
-| `-status` | off | print the repeater's statistics |
+| `-status` | off | print statistics: the repeater's with `-repeater`, otherwise the companion's own |
 | `-watch` | 0 | with `-repeater`: read status every interval (for example `5m`) until Ctrl-C |
 | `-csv` | | with `-watch`: append each reading to this CSV file |
-| `-cmd` | | CLI command to run on the repeater; repeatable |
+| `-cmd` | | CLI command to run on the repeater, or on the companion itself without `-repeater`; repeatable |
+| `-reconnect-wait` | 2m | after a `-cmd=reboot` on the companion, how long to wait for it to come back; `0` doesn't reconnect |
 | `-cmd-timeout` | 30s | how long to wait for each command's reply |
 | `-safe` | **true** | only allow read-only commands; `-safe=false` allows anything |
 | `-json` | off | JSON result on stdout, progress on stderr |
