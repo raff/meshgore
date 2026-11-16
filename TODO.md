@@ -153,8 +153,6 @@ path hash mode (61) and control data for discovery (55) are done:
 
 ## Still to test on hardware
 
-- `-remove-contact`: written and unit-tested for the frame, not run on a real contact yet
-  (it needs a contact you can afford to lose; the node re-adds it on its next advert).
 - `-discover` and `-remove-channel`, `-auto-add*`, `-path-hash-mode`: tried on the T1000-E.
   `-discover` found the repeater with both SNR values; only repeaters answer in our tests
   (a room server or sensor in range would show whether the type filter works for them).
