@@ -96,8 +96,8 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    from the app, `>` from the node, a 2-byte little-endian length, no checksum, at most
    176 bytes, 115200 baud. Open:
    - `-cmd=reboot -cmd ver` over serial works on the T-Deck: the first two reconnect
-     attempts time out while it boots (about 6 s), the third succeeds. `-watch` over
-     serial is untried.
+     attempts time out while it boots (about 6 s), the third succeeds. `-watch=20s` over
+     serial works too.
    - Whether opening the port resets other boards (DTR/RTS), and whether
      `go.bug.st/serial` needs anything on Linux and Windows.
    - A node running both interfaces answers on both.
