@@ -93,7 +93,9 @@ the serial-only ones work: `stats-core`, `stats-radio`, `stats-packets` and `log
 allowed in safe mode, `erase` and `get prv.key` need `-safe=false` (see `CLI.md`).
 The console has no prompt or reply marker, so a reply ends after about 0.6 s of
 silence; a command that never answers (`reboot`) takes 3 s. `reboot` waits for the
-port to come back (`-reconnect-wait`). Not tried on a real repeater yet.
+port to come back (`-reconnect-wait`). Tried on a Seeed SenseCAP Solar repeater
+(v1.18.0): `ver`, `board`, `get name`, `neighbors` and the three `stats-*` commands work
+(the `stats-*` replies are JSON). `reboot` is untried.
 
 ## Usage
 
