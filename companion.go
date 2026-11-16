@@ -147,9 +147,9 @@ func (c *Client) SetOtherParams(p OtherParams) error {
 
 // Reading is one value from the node's own telemetry.
 type Reading struct {
-	Channel int
-	Name    string
-	Value   string
+	Channel int    `json:"channel"`
+	Name    string `json:"name"`
+	Value   string `json:"value"`
 }
 
 // parseLPP reads telemetry in Cayenne LPP form: channel, type, data. It stops
@@ -212,11 +212,7 @@ func (c *Client) SelfTelemetry() ([]Reading, error) {
 			if f[0] != pushTelemetry || len(f) < 8 {
 				continue
 			}
-			out, rest := parseLPP(f[8:])
-			if len(rest) > 0 {
-				out = append(out, Reading{Name: "unparsed", Value: fmt.Sprintf("% x", rest)})
-			}
-			return out, nil
+			return telemetryReadings(f), nil
 		case <-deadline:
 			return nil, errors.New("SEND_TELEMETRY_REQ: no telemetry reply")
 		}
@@ -233,4 +229,49 @@ func ParseRadioSpec(s string) (freq, bw float64, sf, cr int, err error) {
 		return 0, 0, 0, 0, fmt.Errorf("bad radio parameters %q: %v", s, err)
 	}
 	return
+}
+
+// telemetryReadings reads the sensor data of a telemetry push frame
+// (0x8B, reserved byte, 6-byte key prefix, then the readings).
+func telemetryReadings(f []byte) []Reading {
+	out, rest := parseLPP(f[8:])
+	if len(rest) > 0 {
+		out = append(out, Reading{Name: "unparsed", Value: fmt.Sprintf("% x", rest)})
+	}
+	return out
+}
+
+// RequestTelemetry asks a repeater, room server or sensor for its sensor readings
+// (battery, and whatever sensors it has). Like login and status, the answer
+// arrives over the radio as a push frame, so the request is retried. The node
+// answers only if its permissions allow it.
+func (c *Client) RequestTelemetry(key [32]byte) ([]Reading, error) {
+	cmd := append([]byte{cmdSelfTelemetry, 0, 0, 0}, key[:]...)
+	for attempt := 1; attempt <= loginAttempts; attempt++ {
+		suggested, err := c.sendAccepted(cmd)
+		if err != nil {
+			return nil, fmt.Errorf("SEND_TELEMETRY_REQ: %w", err)
+		}
+		wait := suggested * 4
+		if wait < 8*time.Second {
+			wait = 8 * time.Second
+		}
+		deadline := time.After(wait)
+	recv:
+		for {
+			select {
+			case f := <-c.Push:
+				if f[0] != pushTelemetry || len(f) < 8 || string(f[2:8]) != string(key[:6]) {
+					continue
+				}
+				return telemetryReadings(f), nil
+			case <-deadline:
+				break recv
+			}
+		}
+		if attempt < loginAttempts {
+			logf("no telemetry reply after %s, retrying (%d/%d)...", wait.Round(time.Second), attempt+1, loginAttempts)
+		}
+	}
+	return nil, errors.New("no telemetry reply from repeater")
 }

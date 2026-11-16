@@ -73,6 +73,10 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
 
 ## Still to test on hardware
 
+- `-repeater=... -telemetry`: `CMD_SEND_TELEMETRY_REQ` with the repeater's key; the reply
+  is push `0x8B` with a 6-byte key prefix. Not tried against a real repeater.
+- The T1000-E may have an accelerometer, but this firmware's `-telemetry` does not
+  list one.
 - `-set-name`: afterwards the `Node "..."` line should show the new name.
 - `-set-position`: afterwards `pos` should show the new position.
 - `-watch` and a long `-listen`: power-cycle the companion while running.

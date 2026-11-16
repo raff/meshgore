@@ -253,7 +253,7 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		}
 		fmt.Println("Telemetry:")
 		for _, r := range rs {
-			fmt.Printf("  %-12s %s\n", r.Name, r.Value)
+			fmt.Printf("  %-12s %-28s (channel %d)\n", r.Name, r.Value, r.Channel)
 		}
 	}
 	return exitOK

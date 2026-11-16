@@ -59,7 +59,7 @@ func main() {
 	multiAcks := flag.String("multi-acks", "", "how many extra acks the companion sends (0..255)")
 	showClock := flag.Bool("clock", false, "print the companion's clock")
 	showTuning := flag.Bool("tuning", false, "print the companion's receive delay and airtime factor")
-	showTele := flag.Bool("telemetry", false, "print the companion's own sensor readings, including a GPS position if it has a fix")
+	showTele := flag.Bool("telemetry", false, "print sensor readings: the repeater's with -repeater, else the companion's own (including a GPS position if it has a fix)")
 	flag.Parse()
 
 	// In JSON mode stdout is reserved for the result, so progress text (which
@@ -113,7 +113,7 @@ func main() {
 		secret: *channelSecretFlag, slot: *channelSlot, force: *channelOverwrite, advert: *advert,
 		gps: *gps, interval: *gpsInterval,
 		radio: *setRadio, syncClock: *syncClock, rxDelay: *rxDelay, airtime: *airtimeFactor,
-		shareLoc: *shareLoc, multiAcks: *multiAcks, showClock: *showClock, showTuning: *showTuning, showTele: *showTele,
+		shareLoc: *shareLoc, multiAcks: *multiAcks, showClock: *showClock, showTuning: *showTuning, showTele: *showTele && *repeater == "",
 	}); acts.any() {
 		os.Exit(runNodeActions(l, acts))
 	}
@@ -132,7 +132,7 @@ func main() {
 		}
 		os.Exit(runRepeater(ctx, l, repeaterOpts{
 			watch: *watch, csvPath: *csvPath,
-			node: *name, target: *repeater, password: pw, status: *status,
+			node: *name, target: *repeater, password: pw, status: *status, telemetry: *showTele,
 			cmds: cmds, timeout: *cmdTimeout, json: *jsonOut, out: realStdout,
 			limits: meshgore.Thresholds{MinBatteryV: *minBattery, MaxNoiseFloor: *maxNoise}, safe: *safe,
 		}))
@@ -233,6 +233,7 @@ func (s *stringList) Set(v string) error { *s = append(*s, v); return nil }
 type repeaterOpts struct {
 	node, target, password string
 	status                 bool
+	telemetry              bool
 	cmds                   []string
 	timeout                time.Duration
 	json                   bool
@@ -256,13 +257,14 @@ type cmdResult struct {
 }
 
 type repeaterResult struct {
-	OK       bool                     `json:"ok"`
-	Error    string                   `json:"error,omitempty"`
-	Repeater string                   `json:"repeater,omitempty"`
-	Key      string                   `json:"key,omitempty"`
-	Status   *meshgore.RepeaterStatus `json:"status,omitempty"`
-	Alerts   []string                 `json:"alerts,omitempty"`
-	Commands []cmdResult              `json:"commands,omitempty"`
+	OK        bool                     `json:"ok"`
+	Error     string                   `json:"error,omitempty"`
+	Repeater  string                   `json:"repeater,omitempty"`
+	Key       string                   `json:"key,omitempty"`
+	Status    *meshgore.RepeaterStatus `json:"status,omitempty"`
+	Telemetry []meshgore.Reading       `json:"telemetry,omitempty"`
+	Alerts    []string                 `json:"alerts,omitempty"`
+	Commands  []cmdResult              `json:"commands,omitempty"`
 }
 
 // runRepeater logs in to a remote repeater through the companion node, reads
@@ -325,6 +327,18 @@ func runRepeater(ctx context.Context, l *meshgore.Link, o repeaterOpts) int {
 				fmt.Println("ALERT:", a)
 			}
 			code = exitAlert
+		}
+	}
+
+	if o.telemetry {
+		rs, err := client.RequestTelemetry(ct.PublicKey)
+		if err != nil {
+			return fail(err)
+		}
+		res.Telemetry = rs
+		fmt.Println("Telemetry:")
+		for _, r := range rs {
+			fmt.Printf("  %-12s %s\n", r.Name, r.Value)
 		}
 	}
 

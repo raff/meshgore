@@ -169,7 +169,10 @@ Replies from `get` start with `> `.
 - `-set-radio` is saved by the node. Nodes on different radio settings cannot hear
   each other, but the Bluetooth link is unaffected, so you can always set it back.
   The companion has no `tempradio` (no automatic revert).
-- `-telemetry` shows the node's own sensors: battery, temperature and, with a GPS
+- `-telemetry` with `-repeater=<name> -password=...` asks a repeater for its sensor
+  readings (the CLI has no `telemetry` command; this is a separate radio request,
+  like `-status`). Untested against a real repeater. Without `-repeater` it shows
+  the companion's own sensors: battery, temperature and, with a GPS
   fix, the position (`0,0` means no fix yet).
 - `-share-location` and `-multi-acks` are written together by the firmware; `mc`
   reads the current values first so the other one is kept.
@@ -390,7 +393,7 @@ output plus a non-zero exit as a failure.
 | `-tuning` | off | print the receive delay and airtime factor |
 | `-share-location` | | `share` or `none`: whether adverts carry the location |
 | `-multi-acks` | | extra acks to send, 0..255 |
-| `-telemetry` | off | print the companion's own sensor readings (battery, temperature, GPS) |
+| `-telemetry` | off | print sensor readings: the repeater's with `-repeater`, otherwise the companion's own (battery, temperature, GPS) |
 | `-gps` | | switch the companion's GPS `on` or `off` (builds with GPS only) |
 | `-gps-interval` | -1 | GPS update interval in seconds, 0..86400 (only on builds that list `gps_interval`) |
 | `-advert` | | make the companion advertise itself: `flood` or `zerohop` |
