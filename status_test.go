@@ -241,3 +241,13 @@ func TestParseCustomVars(t *testing.T) {
 		t.Errorf("name without value: %v", v)
 	}
 }
+
+func TestBuildSetCustomVar(t *testing.T) {
+	got, err := buildSetCustomVar("gps", "1")
+	if err != nil || string(got) != "\x29gps:1" {
+		t.Errorf("got %q, %v", got, err)
+	}
+	if _, err := buildSetCustomVar("a:b", "1"); err == nil {
+		t.Error("colon in name accepted")
+	}
+}

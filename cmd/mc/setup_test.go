@@ -58,10 +58,10 @@ func TestFirstEmptySlot(t *testing.T) {
 }
 
 func TestNodeActionsAny(t *testing.T) {
-	if (nodeActions{}).any() || (nodeActions{slot: 3, force: true}).any() {
+	if (nodeActions{interval: -1}).any() || (nodeActions{slot: 3, force: true, interval: -1}).any() {
 		t.Error("slot and overwrite alone are not actions")
 	}
-	for _, a := range []nodeActions{{name: "x"}, {position: "1,2"}, {channel: "#c"}, {advert: "flood"}} {
+	for _, a := range []nodeActions{{name: "x", interval: -1}, {position: "1,2", interval: -1}, {channel: "#c", interval: -1}, {advert: "flood", interval: -1}, {gps: "on", interval: -1}, {interval: 60}} {
 		if !a.any() {
 			t.Errorf("%+v should count as an action", a)
 		}

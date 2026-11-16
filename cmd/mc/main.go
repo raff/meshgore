@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -26,9 +27,9 @@ func main() {
 	hcWait := flag.Duration("healthcheck-wait", 0, "after sending the healthcheck, wait this long for the code to appear on #healthcheck; exit 1 if it doesn't")
 	repeater := flag.String("repeater", "", "repeater to administer remotely: contact name or hex key (prefix)")
 	password := flag.String("password", "", "repeater admin password (or set MC_PASSWORD)")
-	status := flag.Bool("status", false, "with -repeater: print the repeater's statistics")
+	status := flag.Bool("status", false, "print statistics: the repeater's with -repeater, else the companion's own")
 	var cmds stringList
-	flag.Var(&cmds, "cmd", "CLI command to run on the repeater (repeatable)")
+	flag.Var(&cmds, "cmd", "CLI command to run on the repeater, or on the companion itself without -repeater (repeatable)")
 	cmdTimeout := flag.Duration("cmd-timeout", 30*time.Second, "how long to wait for each command's reply")
 	jsonOut := flag.Bool("json", false, "with -repeater: print the result as JSON on stdout; progress goes to stderr")
 	minBattery := flag.Float64("min-battery", 0, "with -repeater -status: exit 2 if battery volts are below this (0 = off)")
@@ -47,6 +48,9 @@ func main() {
 	channelOverwrite := flag.Bool("channel-overwrite", false, "with -add-channel: allow replacing a channel that is already in the slot")
 	vars := flag.Bool("vars", false, "list the companion's custom variables (what its board supports, e.g. GPS)")
 	advert := flag.String("advert", "", "make the companion advertise itself: \"flood\" (repeated across the mesh) or \"zerohop\" (direct neighbours only)")
+	reconnectWait := flag.Duration("reconnect-wait", 2*time.Minute, "after a -cmd that reboots the companion, how long to wait for it to come back (0 = don't reconnect)")
+	gps := flag.String("gps", "", "switch the companion's GPS \"on\" or \"off\" (only on builds with GPS; see -vars)")
+	gpsInterval := flag.Int("gps-interval", -1, "how often the GPS updates the position, in seconds (0..86400; 0 = no automatic updates)")
 	flag.Parse()
 
 	// In JSON mode stdout is reserved for the result, so progress text (which
@@ -84,9 +88,18 @@ func main() {
 		os.Exit(runVars(l))
 	}
 
+	if len(cmds) > 0 && *repeater == "" {
+		os.Exit(runLocalCmds(ctx, l, cmds, *safe, *reconnectWait, *jsonOut, realStdout))
+	}
+
+	if *status && *repeater == "" {
+		os.Exit(runStats(l, *jsonOut, realStdout))
+	}
+
 	if acts := (nodeActions{
 		name: *setName, position: *setPosition, channel: *addChannel,
 		secret: *channelSecretFlag, slot: *channelSlot, force: *channelOverwrite, advert: *advert,
+		gps: *gps, interval: *gpsInterval,
 	}); acts.any() {
 		os.Exit(runNodeActions(l, acts))
 	}
@@ -391,6 +404,75 @@ func printNodeInfo(l *meshgore.Link) {
 
 // runVars prints the companion's custom variables and what they suggest about
 // the hardware.
+// runLocalCmds runs CLI commands on the companion itself.
+func runLocalCmds(ctx context.Context, l *meshgore.Link, cmds []string, safe bool, wait time.Duration, asJSON bool, out *os.File) int {
+	defer l.Close()
+	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
+	if safe {
+		for _, c := range cmds {
+			if !meshgore.IsReadOnlyCommand(c) {
+				return fail(fmt.Errorf("%q is not a known read-only command; use -safe=false to allow it (see CLI.md)", c))
+			}
+		}
+	}
+	type result struct {
+		Command string `json:"command"`
+		Reply   string `json:"reply"`
+	}
+	var res []result
+	for i, c := range cmds {
+		fmt.Printf("> %s\n", c)
+		if strings.TrimSpace(c) == "reboot" {
+			l.Client.RunCLINoReply(c)
+			fmt.Println("(rebooting)")
+			res = append(res, result{c, ""})
+			if i == len(cmds)-1 && wait == 0 {
+				break
+			}
+			if wait == 0 {
+				return fail(errors.New("-reconnect-wait=0: cannot run further commands after reboot"))
+			}
+			fmt.Printf("Waiting up to %s for the companion to come back...\n", wait)
+			rctx, cancel := context.WithTimeout(ctx, wait)
+			err := l.Reconnect(rctx)
+			cancel()
+			if err != nil {
+				return fail(fmt.Errorf("companion did not come back within %s: %w", wait, err))
+			}
+			printNodeInfo(l)
+			continue
+		}
+		r, err := l.Client.RunCLI(c)
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Println(r)
+		res = append(res, result{c, r})
+	}
+	if asJSON {
+		json.NewEncoder(out).Encode(map[string]any{"commands": res})
+	}
+	return exitOK
+}
+
+// runStats prints the companion's own statistics.
+func runStats(l *meshgore.Link, asJSON bool, out *os.File) int {
+	defer l.Close()
+	st, err := l.Client.Stats()
+	if err != nil {
+		fmt.Println("error:", err)
+		return exitFail
+	}
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		enc.Encode(st)
+		return exitOK
+	}
+	fmt.Print(st)
+	return exitOK
+}
+
 func runVars(l *meshgore.Link) int {
 	defer l.Close()
 	vars, err := l.Client.CustomVars()

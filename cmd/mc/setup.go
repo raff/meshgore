@@ -21,10 +21,12 @@ type nodeActions struct {
 	slot     int    // -1: the first empty slot
 	force    bool   // allow overwriting a used slot
 	advert   string // "flood", "zerohop" or empty
+	gps      string // "on", "off" or empty
+	interval int    // GPS update interval in seconds; -1: leave alone
 }
 
 func (a nodeActions) any() bool {
-	return a.name != "" || a.position != "" || a.channel != "" || a.advert != ""
+	return a.name != "" || a.position != "" || a.channel != "" || a.advert != "" || a.gps != "" || a.interval >= 0
 }
 
 // parsePosition parses "lat,lon" in degrees.
@@ -105,6 +107,13 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		return fail(fmt.Errorf("-advert must be \"flood\" or \"zerohop\", not %q", a.advert))
 	}
 
+	if a.gps != "" && a.gps != "on" && a.gps != "off" {
+		return fail(fmt.Errorf("-gps must be \"on\" or \"off\", not %q", a.gps))
+	}
+	if a.interval > 86400 {
+		return fail(fmt.Errorf("-gps-interval must be 0..86400 seconds"))
+	}
+
 	c := l.Client
 	if a.name != "" {
 		if err := c.SetName(a.name); err != nil {
@@ -117,6 +126,18 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 			return fail(err)
 		}
 		fmt.Printf("Position set to %.6f,%.6f\n", lat, lon)
+	}
+	if a.gps != "" {
+		if err := c.SetGPS(a.gps == "on"); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("GPS %s\n", a.gps)
+	}
+	if a.interval >= 0 {
+		if err := c.SetGPSInterval(a.interval); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("GPS interval set to %d s\n", a.interval)
 	}
 	if a.channel != "" {
 		if code := addChannel(c, a, secret, generated); code != exitOK {

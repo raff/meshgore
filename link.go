@@ -146,13 +146,29 @@ func (l *Link) Close() { _ = l.Device.Disconnect() }
 // subscribes to notifications and runs APP_START and DEVICE_QUERY. On error the
 // connection is closed.
 func connectAndHandshake(addr bluetooth.Address) (device bluetooth.Device, client *Client, self *SelfInfo, err error) {
+	// The BLE library can panic on a half-connected peripheral (seen on macOS
+	// right after the node reboots); report that as a failed attempt so callers
+	// retry instead of crashing.
+	defer func() {
+		if r := recover(); r != nil {
+			client, self, err = nil, nil, fmt.Errorf("connection failed: %v", r)
+		}
+	}()
 	device, err = adapter.Connect(addr, bluetooth.ConnectionParams{})
 	if err != nil {
 		return device, nil, nil, fmt.Errorf("connect: %w", err)
 	}
+	if device.Address == (bluetooth.Address{}) {
+		// On macOS, Connect can return an empty Device and a nil error when the
+		// peripheral reports disconnected; using it would crash.
+		return device, nil, nil, errors.New("connect: peripheral is not connected yet")
+	}
 	defer func() {
 		if err != nil {
-			device.Disconnect()
+			func() {
+				defer func() { _ = recover() }()
+				device.Disconnect()
+			}()
 		}
 	}()
 	logf("Connected!")

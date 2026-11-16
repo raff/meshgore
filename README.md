@@ -125,6 +125,47 @@ the board has the hardware, such as `gps` and `gps_interval` on a node with GPS.
 The output says whether a `gps` variable is there, which is the way to tell if GPS
 support was compiled in.
 
+### Companion statistics
+
+```
+./mc -name=MyNode -status
+./mc -name=MyNode -status -json
+```
+
+Without `-repeater`, `-status` reads the companion's own statistics: battery,
+uptime, storage, noise floor, last RSSI and SNR, airtime and packet counts. A part
+the firmware does not answer is left out.
+
+### CLI commands on the companion
+
+```
+./mc -name=MyNode -cmd=ver -cmd=board -cmd="get radio"
+```
+
+Without `-repeater`, `-cmd` runs on the companion itself (`CMD_RUN_CLI_COMMAND`,
+firmware v14+), with the same `-safe` check as for a repeater. The companion's
+command set is much smaller; unknown commands reply `Unknown command`. Tried on a
+T1000-E (v1.18.0): `ver`, `board`, `get name`, `get radio`, `get tx`, `get freq`,
+`get radio.rxgain`, `get rxdelay`, `get af` and `get tz.offset` work, and so does
+`set tx` (needs `-safe=false`). `clock`, `gps`,
+`neighbors`, `get lat`, `get lon`, `get repeat` and `get public.key` do not.
+Replies from `get` start with `> `.
+
+`-cmd=reboot -safe=false` waits for the companion to come back (up to
+`-reconnect-wait`, default 2 minutes) and then runs any later `-cmd`s.
+
+### GPS on the companion
+
+```
+./mc -name=MyNode -gps=on
+./mc -name=MyNode -gps=off
+./mc -name=MyNode -gps-interval=60
+```
+
+Needs a build with GPS; `-vars` shows a `gps` variable if there is one. The
+T1000-E on v1.18.0 has `gps` but rejects `gps_interval` (`ILLEGAL_ARG`), so
+`-gps-interval` works only on builds that list that variable.
+
 ### Advertise the companion
 
 ```

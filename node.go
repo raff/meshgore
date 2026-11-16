@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 )
 
 // Commands that configure the companion itself. The channel layout is in the
@@ -16,6 +17,7 @@ const (
 	cmdSetAdvertLatLon = 0x0E
 	cmdSetChannel      = 0x20
 	cmdGetCustomVars   = 0x28
+	cmdSetCustomVar    = 0x29
 
 	respCustomVars = 0x15
 
@@ -151,4 +153,77 @@ func (c *Client) CustomVars() ([]Var, error) {
 		return nil, fmt.Errorf("GET_CUSTOM_VARS: %w", err)
 	}
 	return parseCustomVars(f), nil
+}
+
+func buildSetCustomVar(name, value string) ([]byte, error) {
+	if name == "" || strings.ContainsAny(name, ":,") || strings.Contains(value, ",") {
+		return nil, fmt.Errorf("bad variable %q=%q", name, value)
+	}
+	return append([]byte{cmdSetCustomVar}, name+":"+value...), nil
+}
+
+// SetCustomVar changes a custom variable (see CustomVars). The firmware answers
+// ILLEGAL_ARG for a name the board does not have or a value out of range.
+func (c *Client) SetCustomVar(name, value string) error {
+	cmd, err := buildSetCustomVar(name, value)
+	if err != nil {
+		return fmt.Errorf("SET_CUSTOM_VAR: %w", err)
+	}
+	if _, err := c.Do(cmd, respOK); err != nil {
+		return fmt.Errorf("SET_CUSTOM_VAR %s: %w", name, err)
+	}
+	return nil
+}
+
+// SetGPS switches the GPS on or off.
+func (c *Client) SetGPS(on bool) error {
+	v := "0"
+	if on {
+		v = "1"
+	}
+	return c.SetCustomVar("gps", v)
+}
+
+// SetGPSInterval sets how often the GPS updates the position, in seconds
+// (0..86400; 0 means no automatic updates).
+func (c *Client) SetGPSInterval(seconds int) error {
+	if seconds < 0 || seconds > 86400 {
+		return fmt.Errorf("GPS interval %d is out of range (0..86400 seconds)", seconds)
+	}
+	return c.SetCustomVar("gps_interval", fmt.Sprint(seconds))
+}
+
+const (
+	cmdRunCLI   = 0x42
+	respCLIText = 0x1D
+)
+
+// RunCLI runs a CLI command on the companion itself (v14+ firmware) and returns
+// its text reply. The companion's command set is smaller than a repeater's and
+// an unknown command is answered with "Unknown command", not an error.
+func (c *Client) RunCLI(command string) (string, error) {
+	if len(command) < 2 {
+		return "", errors.New("RUN_CLI_COMMAND: command too short")
+	}
+	f, err := c.Do(append([]byte{cmdRunCLI}, command...), respCLIText)
+	if err != nil {
+		return "", fmt.Errorf("RUN_CLI_COMMAND: %w", err)
+	}
+	return strings.TrimSpace(string(f[1:])), nil
+}
+
+// RunCLINoReply sends a CLI command that makes the node restart or power off, so
+// no reply comes and the write is often never confirmed (CoreBluetooth blocks for
+// about 50 s). The write is left running in the background and this returns after
+// a short grace period; closing or replacing the connection ends it.
+func (c *Client) RunCLINoReply(command string) {
+	done := make(chan error, 1)
+	go func() { done <- c.write(append([]byte{cmdRunCLI}, command...)) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			logf("write: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+	}
 }

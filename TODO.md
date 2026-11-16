@@ -41,6 +41,39 @@ Proposed commands:
   manually set one, if the frame says)
 - `-share-location=on|off` for the advert policy
 
+## Parity: repeater `-cmd` vs companion flags
+
+Done on both: status (`-status`), advert (`advert` / `-advert`), name
+(`set name` / `-set-name`), position (`set lat|lon` / `-set-position`), GPS on/off
+(`gps on|off` / `-gps`), version and board (printed on connect).
+
+Repeater has, companion lacks (companion command codes are from memory of the
+firmware, so confirm against the source first):
+- `-watch`, `-csv`, `-min-battery` and `-max-noise` for the companion's `-status`.
+- Clock: `clock`, `clock sync`, `time` (companion `GET/SET_DEVICE_TIME`).
+- Radio: `set radio`, `set tx`, `tempradio` (companion `SET_RADIO_PARAMS`,
+  `SET_RADIO_TX_POWER`).
+- `reboot`, `poweroff`, factory reset.
+- `gps` state with fix and satellites; `gps advert` (companion: the location policy
+  in `SET_OTHER_PARAMS`, the `-share-location` item above); `gps sync`.
+- `discover.neighbors` and `neighbors`.
+- `multi.acks` and other tuning via `SET_OTHER_PARAMS`.
+- Repeater only by nature, no companion equivalent: `password`, `setperm`, `region`,
+  `log`, `clear stats`, `powersaving`.
+
+Companion has, repeater lacks (by nature): messages, channels, contacts, `-dm`,
+`-healthcheck`, `-listen`.
+
+`-cmd` without `-repeater` now runs `CMD_RUN_CLI_COMMAND` (`0x42`) on the companion.
+On the T1000-E (v1.18.0) it accepts `ver`, `board`, `get name|radio|tx|freq|
+radio.rxgain|rxdelay|af|tz.offset`, and from the firmware source `set name`,
+`set pin`, `reboot`, `poweroff` and the radio settings; it rejects `clock`, `gps`,
+`neighbors`, `get lat|lon|repeat|public.key`. So the radio and reboot gaps above can
+be closed with `-cmd` (`set tx` confirmed on hardware; not tried yet: `set radio`, `tempradio`, `reboot`),
+but clock, GPS detail and neighbors need the dedicated companion commands.
+`IsReadOnlyCommand` is repeater-shaped and still blocks companion-only commands
+such as `get tz.offset` in safe mode; check that.
+
 ## Still to test on hardware
 
 - `-set-name`: afterwards the `Node "..."` line should show the new name.
