@@ -35,7 +35,7 @@ func main() {
 	minBattery := flag.Float64("min-battery", 0, "with -repeater -status: exit 2 if battery volts are below this (0 = off)")
 	maxNoise := flag.Int("max-noise", 0, "with -repeater -status: exit 2 if the noise floor in dBm is above this, e.g. -100 (0 = off)")
 	safe := flag.Bool("safe", true, "with -repeater: only allow read-only -cmd commands; -safe=false allows anything")
-	watch := flag.Duration("watch", 0, "with -repeater: stay connected and read its status every interval (e.g. 5m); -json prints one object per line")
+	watch := flag.Duration("watch", 0, "stay connected and read the status (the repeater's, or the companion's own without -repeater) every interval, e.g. 5m; -json prints one object per line")
 	csvPath := flag.String("csv", "", "with -watch: append each reading to this CSV file")
 	verbose := flag.Bool("v", false, "log raw protocol frames")
 	dm := flag.String("dm", "", "send a direct message to this contact (name, hex key prefix or full key); needs -text")
@@ -51,6 +51,15 @@ func main() {
 	reconnectWait := flag.Duration("reconnect-wait", 2*time.Minute, "after a -cmd that reboots the companion, how long to wait for it to come back (0 = don't reconnect)")
 	gps := flag.String("gps", "", "switch the companion's GPS \"on\" or \"off\" (only on builds with GPS; see -vars)")
 	gpsInterval := flag.Int("gps-interval", -1, "how often the GPS updates the position, in seconds (0..86400; 0 = no automatic updates)")
+	setRadio := flag.String("set-radio", "", "set the companion's radio as \"<freq MHz>,<bw kHz>,<sf>,<cr>\", e.g. 910.525,62.5,7,5 (saved; the Bluetooth link is unaffected)")
+	syncClock := flag.Bool("sync-clock", false, "set the companion's clock from this computer (the firmware refuses to move it backwards)")
+	rxDelay := flag.String("rx-delay", "", "set the companion's receive delay base (0..20)")
+	airtimeFactor := flag.String("airtime-factor", "", "set the companion's airtime factor (0..9)")
+	shareLoc := flag.String("share-location", "", "whether the companion's adverts carry its location: \"share\" or \"none\"")
+	multiAcks := flag.String("multi-acks", "", "how many extra acks the companion sends (0..255)")
+	showClock := flag.Bool("clock", false, "print the companion's clock")
+	showTuning := flag.Bool("tuning", false, "print the companion's receive delay and airtime factor")
+	showTele := flag.Bool("telemetry", false, "print the companion's own sensor readings, including a GPS position if it has a fix")
 	flag.Parse()
 
 	// In JSON mode stdout is reserved for the result, so progress text (which
@@ -80,8 +89,11 @@ func main() {
 	defer l.Close()
 	printNodeInfo(l)
 
-	if *watch > 0 && (*repeater == "" || len(cmds) > 0) {
-		log.Fatal("-watch needs -repeater and cannot be combined with -cmd")
+	if *watch > 0 && len(cmds) > 0 {
+		log.Fatal("-watch cannot be combined with -cmd")
+	}
+	if *watch > 0 && *repeater == "" {
+		os.Exit(watchCompanion(ctx, l, *watch, *csvPath, meshgore.Thresholds{MinBatteryV: *minBattery, MaxNoiseFloor: *maxNoise}, *jsonOut, realStdout))
 	}
 
 	if *vars {
@@ -100,6 +112,8 @@ func main() {
 		name: *setName, position: *setPosition, channel: *addChannel,
 		secret: *channelSecretFlag, slot: *channelSlot, force: *channelOverwrite, advert: *advert,
 		gps: *gps, interval: *gpsInterval,
+		radio: *setRadio, syncClock: *syncClock, rxDelay: *rxDelay, airtime: *airtimeFactor,
+		shareLoc: *shareLoc, multiAcks: *multiAcks, showClock: *showClock, showTuning: *showTuning, showTele: *showTele,
 	}); acts.any() {
 		os.Exit(runNodeActions(l, acts))
 	}
@@ -396,6 +410,7 @@ func printNodeInfo(l *meshgore.Link) {
 	s := l.Self
 	fmt.Printf("Node %q\n  pubkey %x\n  pos %.6f,%.6f\n  radio %.3f MHz BW %.1f kHz SF%d CR%d\n",
 		s.Name, s.PublicKey, s.Lat, s.Lon, s.FreqMHz, s.BandwidthKHz, s.SF, s.CR)
+	fmt.Printf("  adverts carry location: %s, multi-acks %d\n", map[byte]string{0: "none", 1: "share"}[s.AdvLocPolicy], s.MultiAcks)
 	if d := l.Client.Info; d != nil {
 		fmt.Printf("Device: %s fw v%d (%s, build %s)\n  max contacts %d, max channels %d\n",
 			d.Model, d.FirmwareVer, d.Version, d.FirmwareBuild, d.MaxContacts, d.MaxChannels)

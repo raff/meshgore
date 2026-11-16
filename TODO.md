@@ -43,36 +43,33 @@ Proposed commands:
 
 ## Parity: repeater `-cmd` vs companion flags
 
-Done on both: status (`-status`), advert (`advert` / `-advert`), name
-(`set name` / `-set-name`), position (`set lat|lon` / `-set-position`), GPS on/off
-(`gps on|off` / `-gps`), version and board (printed on connect).
+Done on both: status and `-watch` (`-status`, `-watch`, `-csv`, thresholds), advert,
+name, position, GPS on/off, clock (`clock` / `-clock`, `-sync-clock`), radio
+(`set radio` / `-set-radio`; `set tx` through `-cmd`), tuning (`rxdelay`, `af` /
+`-rx-delay`, `-airtime-factor`), advert location policy (`gps advert` /
+`-share-location`), `multi.acks` (`-multi-acks`), reboot (`-cmd=reboot`), version and
+board (printed on connect). `-telemetry` shows battery, temperature and the GPS
+position the node reports.
 
-Repeater has, companion lacks (companion command codes are from memory of the
-firmware, so confirm against the source first):
-- `-watch`, `-csv`, `-min-battery` and `-max-noise` for the companion's `-status`.
-- Clock: `clock`, `clock sync`, `time` (companion `GET/SET_DEVICE_TIME`).
-- Radio: `set radio`, `set tx`, `tempradio` (companion `SET_RADIO_PARAMS`,
-  `SET_RADIO_TX_POWER`).
-- `reboot`, `poweroff`, factory reset.
-- `gps` state with fix and satellites; `gps advert` (companion: the location policy
-  in `SET_OTHER_PARAMS`, the `-share-location` item above); `gps sync`.
-- `discover.neighbors` and `neighbors`.
-- `multi.acks` and other tuning via `SET_OTHER_PARAMS`.
-- Repeater only by nature, no companion equivalent: `password`, `setperm`, `region`,
-  `log`, `clear stats`, `powersaving`.
+Not done, and why:
+- **`tempradio`**: the companion firmware has no temporary radio change. Bluetooth
+  is unaffected by a bad radio setting, so `-set-radio` can always be undone.
+- **`discover.neighbors`**: the companion would use `CMD_SEND_CONTROL_DATA` (`0x37`),
+  but its payload is defined outside `MyMesh.cpp`; find it in the firmware's
+  control-data code before building on it. `-contacts` already lists heard adverts.
+- **Factory reset** (`CMD_FACTORY_RESET` `0x33`, payload the text `reset`): left out
+  on purpose, since it formats the node.
+- **`gps sync`, `gps setloc`, GPS satellites and fix state**: no companion command.
+  `-telemetry` shows a position once there is a fix.
+- **`get lat|lon|repeat|public.key`, `neighbors`, `gps`**: the companion CLI
+  answers `Unknown command`; the dedicated flags above replace them.
+- Repeater only by nature: `password`, `setperm`, `region`, `log`, `clear stats`,
+  `powersaving`.
+- Companion only by nature: messages, channels, contacts, `-dm`, `-healthcheck`,
+  `-listen`.
 
-Companion has, repeater lacks (by nature): messages, channels, contacts, `-dm`,
-`-healthcheck`, `-listen`.
-
-`-cmd` without `-repeater` now runs `CMD_RUN_CLI_COMMAND` (`0x42`) on the companion.
-On the T1000-E (v1.18.0) it accepts `ver`, `board`, `get name|radio|tx|freq|
-radio.rxgain|rxdelay|af|tz.offset`, and from the firmware source `set name`,
-`set pin`, `reboot`, `poweroff` and the radio settings; it rejects `clock`, `gps`,
-`neighbors`, `get lat|lon|repeat|public.key`. So the radio and reboot gaps above can
-be closed with `-cmd` (`set tx` confirmed on hardware; not tried yet: `set radio`, `tempradio`, `reboot`),
-but clock, GPS detail and neighbors need the dedicated companion commands.
-`IsReadOnlyCommand` is repeater-shaped and still blocks companion-only commands
-such as `get tz.offset` in safe mode; check that.
+Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
+`get tz.offset` works without `-safe=false`; `set` and `reboot` need it.
 
 ## Still to test on hardware
 

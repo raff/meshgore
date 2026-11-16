@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/raff/meshgore"
 )
@@ -23,10 +24,22 @@ type nodeActions struct {
 	advert   string // "flood", "zerohop" or empty
 	gps      string // "on", "off" or empty
 	interval int    // GPS update interval in seconds; -1: leave alone
+
+	radio      string // "freq,bw,sf,cr"
+	syncClock  bool
+	rxDelay    string // seconds, as typed; empty: leave alone
+	airtime    string // airtime factor, as typed
+	shareLoc   string // "share" or "none"
+	multiAcks  string // "0", "1", ...
+	showClock  bool
+	showTuning bool
+	showTele   bool
 }
 
 func (a nodeActions) any() bool {
-	return a.name != "" || a.position != "" || a.channel != "" || a.advert != "" || a.gps != "" || a.interval >= 0
+	return a.name != "" || a.position != "" || a.channel != "" || a.advert != "" || a.gps != "" || a.interval >= 0 ||
+		a.radio != "" || a.syncClock || a.rxDelay != "" || a.airtime != "" || a.shareLoc != "" || a.multiAcks != "" ||
+		a.showClock || a.showTuning || a.showTele
 }
 
 // parsePosition parses "lat,lon" in degrees.
@@ -114,6 +127,32 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		return fail(fmt.Errorf("-gps-interval must be 0..86400 seconds"))
 	}
 
+	var freq, bw, rxd, atf float64
+	var sf, cr, acks int
+	if a.radio != "" {
+		if freq, bw, sf, cr, err = meshgore.ParseRadioSpec(a.radio); err != nil {
+			return fail(fmt.Errorf("-set-radio: %w", err))
+		}
+	}
+	if a.rxDelay != "" {
+		if rxd, err = strconv.ParseFloat(a.rxDelay, 64); err != nil {
+			return fail(fmt.Errorf("-rx-delay: bad number %q", a.rxDelay))
+		}
+	}
+	if a.airtime != "" {
+		if atf, err = strconv.ParseFloat(a.airtime, 64); err != nil {
+			return fail(fmt.Errorf("-airtime-factor: bad number %q", a.airtime))
+		}
+	}
+	if a.shareLoc != "" && a.shareLoc != "share" && a.shareLoc != "none" {
+		return fail(fmt.Errorf("-share-location must be \"share\" or \"none\", not %q", a.shareLoc))
+	}
+	if a.multiAcks != "" {
+		if acks, err = strconv.Atoi(a.multiAcks); err != nil || acks < 0 || acks > 255 {
+			return fail(fmt.Errorf("-multi-acks must be 0..255, not %q", a.multiAcks))
+		}
+	}
+
 	c := l.Client
 	if a.name != "" {
 		if err := c.SetName(a.name); err != nil {
@@ -139,6 +178,49 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		}
 		fmt.Printf("GPS interval set to %d s\n", a.interval)
 	}
+	if a.radio != "" {
+		if err := c.SetRadio(freq, bw, sf, cr); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Radio set to %.3f MHz BW %.1f kHz SF%d CR%d (saved)\n", freq, bw, sf, cr)
+	}
+	if a.rxDelay != "" || a.airtime != "" {
+		t, err := c.Tuning()
+		if err != nil {
+			return fail(err)
+		}
+		if a.rxDelay != "" {
+			t.RxDelayBase = rxd
+		}
+		if a.airtime != "" {
+			t.AirtimeFactor = atf
+		}
+		if err := c.SetTuning(*t); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Tuning set: receive delay %g, airtime factor %g\n", t.RxDelayBase, t.AirtimeFactor)
+	}
+	if a.shareLoc != "" || a.multiAcks != "" {
+		// SET_OTHER_PARAMS overwrites everything, so start from the current values.
+		p := meshgore.OtherParamsOf(l.Self)
+		if a.shareLoc != "" {
+			p.AdvLocPolicy = map[string]byte{"none": 0, "share": 1}[a.shareLoc]
+		}
+		if a.multiAcks != "" {
+			p.MultiAcks = byte(acks)
+		}
+		if err := c.SetOtherParams(p); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Advert location: %s, multi-acks: %d\n", map[byte]string{0: "none", 1: "share"}[p.AdvLocPolicy], p.MultiAcks)
+	}
+	if a.syncClock {
+		now := time.Now()
+		if err := c.SetDeviceTime(now); err != nil {
+			return fail(fmt.Errorf("%w (the firmware refuses to move the clock backwards)", err))
+		}
+		fmt.Println("Clock set to", now.UTC().Format(time.DateTime), "UTC")
+	}
 	if a.channel != "" {
 		if code := addChannel(c, a, secret, generated); code != exitOK {
 			return code
@@ -149,6 +231,30 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 			return fail(err)
 		}
 		fmt.Printf("Advert (%s) sent\n", a.advert)
+	}
+	if a.showClock {
+		t, err := c.DeviceTime()
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Clock: %s UTC (%+.0fs from this computer)\n", t.Format(time.DateTime), t.Sub(time.Now()).Seconds())
+	}
+	if a.showTuning {
+		t, err := c.Tuning()
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Tuning: receive delay %g, airtime factor %g\n", t.RxDelayBase, t.AirtimeFactor)
+	}
+	if a.showTele {
+		rs, err := c.SelfTelemetry()
+		if err != nil {
+			return fail(err)
+		}
+		fmt.Println("Telemetry:")
+		for _, r := range rs {
+			fmt.Printf("  %-12s %s\n", r.Name, r.Value)
+		}
 	}
 	return exitOK
 }

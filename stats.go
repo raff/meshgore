@@ -208,3 +208,15 @@ func (s *CompanionStats) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(out)
 }
+
+// Check returns one message per crossed limit.
+func (s *CompanionStats) Check(t Thresholds) []string {
+	var alerts []string
+	if v := float64(s.BatteryMV) / 1000; s.HasCore && t.MinBatteryV > 0 && v < t.MinBatteryV {
+		alerts = append(alerts, fmt.Sprintf("battery %.2f V is below %.2f V", v, t.MinBatteryV))
+	}
+	if s.HasRadio && t.MaxNoiseFloor != 0 && int(s.NoiseFloor) > t.MaxNoiseFloor {
+		alerts = append(alerts, fmt.Sprintf("noise floor %d dBm is above %d dBm", s.NoiseFloor, t.MaxNoiseFloor))
+	}
+	return alerts
+}

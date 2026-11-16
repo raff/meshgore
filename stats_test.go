@@ -30,3 +30,28 @@ func TestCompanionStatsParse(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestBuildSetRadio(t *testing.T) {
+	got, err := buildSetRadio(910.525, 62.5, 7, 5)
+	want := []byte{0x0B, 0xBD, 0xE4, 0x0D, 0, 0x24, 0xF4, 0, 0, 7, 5} // 910525 kHz, 62500 Hz
+	if err != nil || string(got) != string(want) {
+		t.Errorf("got % x, %v; want % x", got, err, want)
+	}
+	for _, bad := range [][4]float64{{100, 62.5, 7, 5}, {910, 600, 7, 5}, {910, 62.5, 13, 5}, {910, 62.5, 7, 9}} {
+		if _, err := buildSetRadio(bad[0], bad[1], int(bad[2]), int(bad[3])); err == nil {
+			t.Errorf("accepted %v", bad)
+		}
+	}
+}
+
+func TestParseLPP(t *testing.T) {
+	// voltage 4.23 V; GPS 37.7749, -122.4194, 12.34 m (0.0001 deg, 0.01 m)
+	b := []byte{1, 0x74, 0x01, 0xA7, 1, 0x88, 0x05, 0xC3, 0x95, 0xED, 0x51, 0xFE, 0x00, 0x04, 0xD2, 9, 0x99, 1}
+	got, rest := parseLPP(b)
+	if len(got) != 2 || got[0].Value != "4.23 V" || got[1].Value != "37.7749,-122.4194 alt 12.34 m" {
+		t.Errorf("got %+v", got)
+	}
+	if len(rest) != 3 {
+		t.Errorf("rest % x", rest)
+	}
+}

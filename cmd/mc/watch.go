@@ -145,3 +145,101 @@ func watchRepeater(ctx context.Context, l *meshgore.Link, ct *meshgore.Contact, 
 		}
 	}
 }
+
+// companionRecord is one reading in -watch mode for the companion itself.
+type companionRecord struct {
+	Time   time.Time                `json:"time"`
+	OK     bool                     `json:"ok"`
+	Error  string                   `json:"error,omitempty"`
+	Status *meshgore.CompanionStats `json:"status,omitempty"`
+	Alerts []string                 `json:"alerts,omitempty"`
+}
+
+// companionCSVRow uses the same columns as the repeater's (see csvHeader); a
+// value the companion's stats lack is left empty.
+func companionCSVRow(r companionRecord) []string {
+	s := r.Status
+	n := func(ok bool, v string) string {
+		if ok {
+			return v
+		}
+		return ""
+	}
+	i := func(v int64) string { return strconv.FormatInt(v, 10) }
+	return []string{
+		r.Time.Format(time.RFC3339),
+		n(s.HasCore || s.HasStorage, strconv.FormatFloat(float64(s.BatteryMV)/1000, 'f', 3, 64)),
+		n(s.HasCore, i(int64(s.Uptime/time.Second))),
+		n(s.HasRadio, i(int64(s.NoiseFloor))),
+		n(s.HasRadio, i(int64(s.LastRSSI))),
+		n(s.HasRadio, strconv.FormatFloat(s.LastSNR, 'f', 2, 64)),
+		n(s.HasCore, i(int64(s.QueueLen))),
+		n(s.HasPackets, i(int64(s.Received))),
+		n(s.HasPackets, i(int64(s.Sent))),
+		n(s.HasErrors, i(int64(s.RecvErrors))),
+		n(s.HasRadio, i(int64(s.TxAirtime/time.Second))),
+		n(s.HasRadio, i(int64(s.RxAirtime/time.Second))),
+		strings.Join(r.Alerts, "; "),
+	}
+}
+
+// watchCompanion reads the companion's own statistics every interval until ctx
+// is cancelled, surviving dropped Bluetooth connections.
+func watchCompanion(ctx context.Context, l *meshgore.Link, interval time.Duration, csvPath string, limits meshgore.Thresholds, asJSON bool, out *os.File) int {
+	defer l.Close()
+	var csvw *csv.Writer
+	if csvPath != "" {
+		w, f, err := openCSV(csvPath)
+		if err != nil {
+			fmt.Println("error:", err)
+			return exitFail
+		}
+		defer f.Close()
+		csvw = w
+		fmt.Println("Logging readings to", csvPath)
+	}
+	enc := json.NewEncoder(out)
+	fmt.Printf("Watching the companion every %s (Ctrl-C to stop)\n", interval)
+
+	for first := true; ; first = false {
+		if !first {
+			select {
+			case <-ctx.Done():
+				return exitOK
+			case <-time.After(interval):
+			}
+		}
+		rec := companionRecord{Time: time.Now()}
+		if !l.Alive() {
+			fmt.Println("connection to the companion lost; reconnecting...")
+			if err := l.Reconnect(ctx); err != nil {
+				return exitOK // cancelled while reconnecting
+			}
+		}
+		if st, err := l.Client.Stats(); err != nil {
+			rec.Error = err.Error()
+		} else {
+			rec.OK, rec.Status = true, st
+			rec.Alerts = st.Check(limits)
+		}
+
+		switch {
+		case asJSON:
+			enc.Encode(rec)
+		case rec.OK:
+			s := rec.Status
+			fmt.Printf("%s  %.2f V  noise %d dBm  rssi %d dBm  snr %.2f dB  rx %d  tx %d  up %s\n",
+				rec.Time.Format(time.DateTime), float64(s.BatteryMV)/1000, s.NoiseFloor, s.LastRSSI,
+				s.LastSNR, s.Received, s.Sent, s.Uptime.Round(time.Second))
+		default:
+			fmt.Printf("%s  error: %s\n", rec.Time.Format(time.DateTime), rec.Error)
+		}
+		for _, a := range rec.Alerts {
+			fmt.Println("ALERT:", a)
+		}
+		if csvw != nil && rec.OK {
+			csvw.Write(companionCSVRow(rec))
+			csvw.Flush()
+		}
+	}
+}

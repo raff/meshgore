@@ -154,6 +154,28 @@ Replies from `get` start with `> `.
 `-cmd=reboot -safe=false` waits for the companion to come back (up to
 `-reconnect-wait`, default 2 minutes) and then runs any later `-cmd`s.
 
+### Clock, radio and other companion settings
+
+```
+./mc -name=MyNode -clock -tuning -telemetry     # read
+./mc -name=MyNode -sync-clock                   # set the clock from this computer
+./mc -name=MyNode -set-radio=910.525,62.5,7,5   # freq MHz, bw kHz, SF, CR
+./mc -name=MyNode -rx-delay=0 -airtime-factor=1
+./mc -name=MyNode -share-location=share -multi-acks=1
+```
+
+- A T1000-E has no battery-backed clock, so its time drifts back after every
+  reboot; `-sync-clock` fixes that. The firmware refuses to move a clock backwards.
+- `-set-radio` is saved by the node. Nodes on different radio settings cannot hear
+  each other, but the Bluetooth link is unaffected, so you can always set it back.
+  The companion has no `tempradio` (no automatic revert).
+- `-telemetry` shows the node's own sensors: battery, temperature and, with a GPS
+  fix, the position (`0,0` means no fix yet).
+- `-share-location` and `-multi-acks` are written together by the firmware; `mc`
+  reads the current values first so the other one is kept.
+- `-watch=5m` without `-repeater` polls the companion's own statistics, with `-csv`,
+  `-json`, `-min-battery` and `-max-noise` as for a repeater.
+
 ### GPS on the companion
 
 ```
@@ -360,13 +382,22 @@ output plus a non-zero exit as a failure.
 | `-channel-slot` | -1 | with `-add-channel`: slot to use (default: first empty) |
 | `-channel-overwrite` | off | with `-add-channel`: replace a channel already in the slot |
 | `-vars` | off | list the companion's custom variables, which show what its board supports (GPS, sensors) |
+| `-set-radio` | | set the radio: `<freq MHz>,<bw kHz>,<sf>,<cr>` (saved) |
+| `-sync-clock` | off | set the companion's clock from this computer |
+| `-clock` | off | print the companion's clock |
+| `-rx-delay` | | receive delay base, 0..20 |
+| `-airtime-factor` | | airtime factor, 0..9 |
+| `-tuning` | off | print the receive delay and airtime factor |
+| `-share-location` | | `share` or `none`: whether adverts carry the location |
+| `-multi-acks` | | extra acks to send, 0..255 |
+| `-telemetry` | off | print the companion's own sensor readings (battery, temperature, GPS) |
 | `-gps` | | switch the companion's GPS `on` or `off` (builds with GPS only) |
 | `-gps-interval` | -1 | GPS update interval in seconds, 0..86400 (only on builds that list `gps_interval`) |
 | `-advert` | | make the companion advertise itself: `flood` or `zerohop` |
 | `-dm` | | send a direct message to this contact; needs `-text` |
 | `-text` | | the message for `-dm` |
 | `-status` | off | print statistics: the repeater's with `-repeater`, otherwise the companion's own |
-| `-watch` | 0 | with `-repeater`: read status every interval (for example `5m`) until Ctrl-C |
+| `-watch` | 0 | read status every interval (for example `5m`) until Ctrl-C; the repeater's with `-repeater`, otherwise the companion's own |
 | `-csv` | | with `-watch`: append each reading to this CSV file |
 | `-cmd` | | CLI command to run on the repeater, or on the companion itself without `-repeater`; repeatable |
 | `-reconnect-wait` | 2m | after a `-cmd=reboot` on the companion, how long to wait for it to come back; `0` doesn't reconnect |
