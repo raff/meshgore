@@ -71,6 +71,41 @@ Not done, and why:
 Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
 `get tz.offset` works without `-safe=false`; `set` and `reboot` need it.
 
+## Connection: other device names and other transports
+
+1. **Other BLE name prefixes.** `Scan` in `link.go` only accepts devices named
+   `MeshCore-<name>` (it checks the prefix and builds `MeshCore-` + `-name`). Some
+   firmware builds advertise other prefixes; a document I saw listed two or three
+   "valid" ones, but I have not seen it again, so confirm the list against the firmware
+   and the official apps before relying on it. Options:
+   - Match a list of known prefixes, and let `-name` be the full name when it already
+     has one (`-name=SomePrefix-Node`).
+   - Or ignore the name and look for the Nordic UART service
+     `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` in the advertisement, then match `-name`
+     against what follows the first `-`. Any device with that service, not only
+     MeshCore, would show up in a scan, so keep a prefix check or an explicit "this is
+     not a MeshCore node" warning. Check that the macOS BLE library reports service
+     UUIDs in scan results (it may only do so for some advertisements).
+   - Also list every candidate when a scan finds none, so a wrong prefix is visible.
+2. **USB serial** as an alternative to Bluetooth, for nodes that are plugged in or
+   have Bluetooth off, and without pairing. The companion firmware speaks the same
+   protocol over serial, framed: a start byte (`<` from the app, `>` from the node), a
+   2-byte little-endian length, then the same frame as over BLE. I am going from memory
+   here, so check the framing, baud rate (115200?) and whether the node needs a
+   reset or a "serial companion" build against the firmware source and
+   `meshcore_py`. Plan:
+   - Make `Client` independent of Bluetooth: it needs a way to write a frame and a way
+     to feed it received frames (`onNotify` is already that). Put an interface between
+     `Client` and `Link`, with a BLE and a serial implementation.
+   - A `-serial=<device>` flag (for example `/dev/cu.usbmodem*`), with `-name` unused,
+     and a way to list candidate ports. Reuse everything else as is.
+   - Reboot and reconnect (`Link.Reconnect`, `-reconnect-wait`) need a serial version:
+     the port disappears while the node restarts.
+   - Libraries to compare: `go.bug.st/serial` (cross-platform, no cgo on macOS).
+3. **Wi-Fi (TCP) companion**, lowest priority. Builds with Wi-Fi expose the same
+   framed protocol over a TCP socket (I think port 5000, to confirm). Once the
+   transport is an interface this is a small addition: `-tcp=host:port`.
+
 ## Still to test on hardware
 
 - The T1000-E may have an accelerometer, but this firmware's `-telemetry` does not
