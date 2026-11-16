@@ -88,24 +88,23 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    enough to match unrelated devices. Note that `Seeed`, `Lilygo` and `NRF52` may have
    no `-` in the name, so the short `-name` form does not apply to them; use the full
    advertised name (or add the prefix list if a node turns up that needs it).
-2. **USB serial** as an alternative to Bluetooth, for nodes that are plugged in or
-   have Bluetooth off, and without pairing. The companion firmware speaks the same
-   protocol over serial, framed: a start byte (`<` from the app, `>` from the node), a
-   2-byte little-endian length, then the same frame as over BLE. I am going from memory
-   here, so check the framing, baud rate (115200?) and whether the node needs a
-   reset or a "serial companion" build against the firmware source and
-   `meshcore_py`. Plan:
-   - Make `Client` independent of Bluetooth: it needs a way to write a frame and a way
-     to feed it received frames (`onNotify` is already that). Put an interface between
-     `Client` and `Link`, with a BLE and a serial implementation.
-   - A `-serial=<device>` flag (for example `/dev/cu.usbmodem*`), with `-name` unused,
-     and a way to list candidate ports. Reuse everything else as is.
-   - Reboot and reconnect (`Link.Reconnect`, `-reconnect-wait`) need a serial version:
-     the port disappears while the node restarts.
-   - Libraries to compare: `go.bug.st/serial` (cross-platform, no cgo on macOS).
-3. **Wi-Fi (TCP) companion**, lowest priority. Builds with Wi-Fi expose the same
-   framed protocol over a TCP socket (I think port 5000, to confirm). Once the
-   transport is an interface this is a small addition: `-tcp=host:port`.
+2. **USB serial: written, untested on hardware.** `Client` now sits on a `transport`
+   interface (`transport.go`: Bluetooth; `serial.go`: serial), `-serial=<port|list>` and
+   `-baud` select it, and `Link.Reconnect` reopens the port, so `-cmd=reboot` and
+   `-watch` work the same. Framing, from the firmware's `ArduinoSerialInterface`: `<`
+   from the app, `>` from the node, a 2-byte little-endian length, no checksum, at most
+   176 bytes, 115200 baud. Tested against a fake node, not a real one. To do:
+   - Try it on a node with `ENABLE_USB_INTERFACE`. Which build environments define it
+     is unconfirmed (the T1000-E companion build may be Bluetooth only), and a node
+     running both interfaces answers on both.
+   - Whether opening the port resets the board (DTR/RTS), and whether `go.bug.st/serial`
+     needs anything on Linux and Windows.
+   - A port that disappears while the node restarts: `Reconnect` retries with backoff,
+     but check how long macOS takes to bring the device node back.
+3. **Wi-Fi (TCP) companion**, lowest priority. Builds with `ENABLE_WIFI_INTERFACE` serve
+   the same `<`/`>` framed protocol on a TCP port (default 5000, per the firmware source).
+   With the transport interface in place this is a small addition: `-tcp=host:port`
+   with a transport over `net.Conn`, reusing `frameReader` and `frameForNode`.
 
 ## Still to test on hardware
 

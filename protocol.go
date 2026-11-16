@@ -66,7 +66,7 @@ const defaultTimeout = 5 * time.Second
 
 // Client speaks the MeshCore companion protocol over an RX/TX characteristic pair.
 type Client struct {
-	rx *bluetooth.DeviceCharacteristic
+	tr transport
 
 	Info *DeviceInfo // set by DeviceQuery
 
@@ -75,13 +75,20 @@ type Client struct {
 	Push chan []byte // unsolicited frames (codes >= 0x80)
 }
 
-// NewClient subscribes to tx notifications and returns a ready client.
-func NewClient(rx, tx *bluetooth.DeviceCharacteristic) (*Client, error) {
-	c := &Client{
-		rx:   rx,
+// newClient returns a client that sends its frames through tr. The transport
+// must hand every frame it receives to onNotify.
+func newClient(tr transport) *Client {
+	return &Client{
+		tr:   tr,
 		resp: make(chan []byte, 256),
 		Push: make(chan []byte, 32),
 	}
+}
+
+// NewClient subscribes to tx notifications and returns a ready client that
+// writes to rx. It is the Bluetooth constructor.
+func NewClient(rx, tx *bluetooth.DeviceCharacteristic) (*Client, error) {
+	c := newClient(&bleTransport{rx: rx})
 	if err := tx.EnableNotifications(c.onNotify); err != nil {
 		return nil, fmt.Errorf("enable notifications: %w", err)
 	}
@@ -276,34 +283,8 @@ func cstr(b []byte) string {
 	return string(b)
 }
 
-// pairingWait is how long write keeps retrying while the user pairs the device.
-const pairingWait = 60 * time.Second
-
-// write sends one frame. If the device requires encryption (ATT 0x0f), the OS
-// starts pairing and prompts for the BLE PIN; keep retrying until it succeeds.
-func (c *Client) write(cmd []byte) error {
-	deadline := time.Now().Add(pairingWait)
-	warned := false
-	for {
-		_, err := c.rx.Write(cmd)
-		if err == nil {
-			return nil
-		}
-		logf("write failed (%s): %v", time.Until(deadline).Round(time.Second), err)
-		// A write that blocks behind the pairing dialog times out instead; that
-		// is returned so the caller can reconnect with the new bond.
-		msg := err.Error()
-		retryable := strings.Contains(msg, "Insufficient Encryption")
-		if !retryable || time.Now().After(deadline) {
-			return err
-		}
-		if !warned {
-			logf("Device requires pairing: enter the BLE PIN in the system dialog (default 123456)...")
-			warned = true
-		}
-		time.Sleep(2 * time.Second)
-	}
-}
+// write sends one frame through the transport.
+func (c *Client) write(cmd []byte) error { return c.tr.WriteFrame(cmd) }
 
 // Channel is one channel slot.
 type Channel struct {

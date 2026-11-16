@@ -74,10 +74,14 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 		logf("Looking for %q", name)
 	}
 	logf("Scanning...")
+	// Without a name, list what is nearby for a few seconds. With one, give up if
+	// the node never shows (it may be off, out of range or connected to another app).
+	limit := 30 * time.Second
 	if name == "" {
-		// Nothing to look for: list what is nearby for a few seconds, then stop.
-		time.AfterFunc(10*time.Second, func() { _ = adapter.StopScan() })
+		limit = 10 * time.Second
 	}
+	stop := time.AfterFunc(limit, func() { _ = adapter.StopScan() })
+	defer stop.Stop()
 	err := adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
 		dname := result.LocalName()
 		if !isCompanion(result.HasServiceUUID(serviceUUID), dname) {
@@ -101,7 +105,7 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 		if name == "" {
 			return target, errors.New("no name given; the companions seen were logged")
 		}
-		return target, errors.New("device not found")
+		return target, fmt.Errorf("device %q not found after %s (is it on, in range and not connected to another app?)", name, limit)
 	}
 	return target, nil
 }
@@ -109,8 +113,10 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 // Link is a connection to a companion that can be re-established. Client and
 // Device change on Reconnect, so do not keep copies of them across one.
 type Link struct {
-	Addr   bluetooth.Address
+	Addr   bluetooth.Address // Bluetooth
 	Device bluetooth.Device
+	Port   string // serial: the port, instead of Addr and Device
+	Baud   int
 	Client *Client
 	Self   *SelfInfo // the node's own details, from the first handshake
 }
@@ -136,22 +142,51 @@ func Dial(addr bluetooth.Address) (*Link, error) {
 	}
 }
 
-// Alive reports whether the BLE connection is still up.
+// Alive reports whether the connection is still up.
 func (l *Link) Alive() bool {
+	if l.Port != "" {
+		return l.Client.tr.Alive()
+	}
 	ok, err := l.Device.Connected()
 	return err == nil && ok
+}
+
+// disconnect drops the current connection.
+func (l *Link) disconnect() {
+	if l.Port != "" {
+		if l.Client != nil {
+			_ = l.Client.tr.Close()
+		}
+		return
+	}
+	_ = l.Device.Disconnect()
+}
+
+// connect makes one attempt to connect again and replaces l.Client on success.
+func (l *Link) connect() error {
+	if l.Port != "" {
+		client, _, err := serialConnect(l.Port, l.Baud)
+		if err == nil {
+			l.Client = client
+		}
+		return err
+	}
+	device, client, _, err := connectAndHandshake(l.Addr)
+	if err == nil {
+		l.Device, l.Client = device, client
+	}
+	return err
 }
 
 // Reconnect replaces a dropped connection, retrying with exponential backoff
 // (2s, 4s, ... up to 1 minute) until it succeeds or ctx is cancelled. The new
 // Client replaces l.Client.
 func (l *Link) Reconnect(ctx context.Context) error {
-	_ = l.Device.Disconnect()
+	l.disconnect()
 	delay := 2 * time.Second
 	for attempt := 1; ; attempt++ {
-		device, client, _, err := connectAndHandshake(l.Addr)
+		err := l.connect()
 		if err == nil {
-			l.Device, l.Client = device, client
 			logf("Reconnected")
 			return nil
 		}
@@ -168,7 +203,7 @@ func (l *Link) Reconnect(ctx context.Context) error {
 }
 
 // Close disconnects from the companion.
-func (l *Link) Close() { _ = l.Device.Disconnect() }
+func (l *Link) Close() { l.disconnect() }
 
 // connectAndHandshake connects, discovers the service and characteristics,
 // subscribes to notifications and runs APP_START and DEVICE_QUERY. On error the

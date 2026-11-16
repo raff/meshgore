@@ -60,6 +60,24 @@ Only one BLE client can use a companion at a time, so close the MeshCore app on
 your phone first. If a node seems stuck, power-cycle it and remove it from
 System Settings -> Bluetooth to pair again.
 
+## USB serial
+
+```
+./mc -serial=list                          # show the serial ports
+./mc -serial=/dev/cu.usbmodem14301 -status
+```
+
+`-serial=<port>` connects over USB instead of Bluetooth: no scanning, no pairing and
+no `-name` needed (the node's own name is used). Everything else works the same,
+including `-cmd=reboot`, which waits for the port to come back.
+
+The node must run a build with its USB serial interface enabled
+(`ENABLE_USB_INTERFACE`). A build that has only Bluetooth does not answer, and `mc`
+reports that the handshake timed out. `-baud` sets the speed (default 115200, which a
+native USB port ignores). **Not yet tried against real hardware**; the framing is from the
+firmware source and is tested against a fake node. Opening a port can reset some boards
+(ESP32 boards with a USB-serial chip reset when DTR toggles).
+
 ## Usage
 
 ### Look at the companion
@@ -379,6 +397,8 @@ output plus a non-zero exit as a failure.
 | `-full-sync` | off | discard the contact cache and download every contact again (implies `-contacts`) |
 | `-healthcheck` | | code to send on `#healthcheck`, then exit |
 | `-healthcheck-wait` | 0 | wait this long for the code to appear on the channel |
+| `-serial` | | connect over USB serial: the port, or `list` to show the ports |
+| `-baud` | 115200 | with `-serial`: baud rate |
 | `-repeater` | | repeater to administer: name, hex key prefix or full key |
 | `-password` | | repeater admin password (or `MC_PASSWORD`) |
 | `-set-name` | | set the name the companion advertises (max 31 bytes) |

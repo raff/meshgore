@@ -20,6 +20,8 @@ import (
 
 func main() {
 	name := flag.String("name", "", "Meshcore device name")
+	serialPort := flag.String("serial", "", "connect over USB serial instead of Bluetooth: the port (e.g. /dev/cu.usbmodem14301), or \"list\" to show the ports")
+	baud := flag.Int("baud", meshgore.DefaultBaud, "with -serial: baud rate (ignored by native USB ports)")
 	healthcheck := flag.String("healthcheck", "", "code to send on the #healthcheck channel")
 	listen := flag.Duration("listen", 15*time.Second, "how long to wait for new messages (0 to exit after syncing)")
 	contactsFlag := flag.Bool("contacts", false, "sync and list contacts (only changes are fetched after the first time)")
@@ -75,16 +77,36 @@ func main() {
 	meshgore.Debug = *verbose
 	meshgore.Logf = func(format string, args ...any) { fmt.Printf(format+"\n", args...) }
 
-	if err := meshgore.Enable(); err != nil {
-		log.Fatalf("failed to enable BLE adapter: %v", err)
+	var l *meshgore.Link
+	if *serialPort == "list" {
+		ports, err := meshgore.ListSerialPorts()
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, p := range ports {
+			fmt.Println(p)
+		}
+		return
 	}
-	target, err := meshgore.Scan(*name)
-	if err != nil {
-		log.Fatal(err)
-	}
-	l, err := meshgore.Dial(target.Address)
-	if err != nil {
-		log.Fatal(err)
+	if *serialPort != "" {
+		var err error
+		if l, err = meshgore.DialSerial(*serialPort, *baud); err != nil {
+			log.Fatal(err)
+		}
+		if *name == "" {
+			*name = l.Self.Name // names the contact cache
+		}
+	} else {
+		if err := meshgore.Enable(); err != nil {
+			log.Fatalf("failed to enable BLE adapter: %v", err)
+		}
+		target, err := meshgore.Scan(*name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if l, err = meshgore.Dial(target.Address); err != nil {
+			log.Fatal(err)
+		}
 	}
 	defer l.Close()
 	printNodeInfo(l)
