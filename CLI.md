@@ -87,6 +87,10 @@ changes: it reverts on its own.
 
 ## Serial only (do not work through a companion)
 
+Run these with `-serial=<port> -serial-cli -cmd ...`. `stats-core`, `stats-radio`,
+`stats-packets` and `log` are allowed in safe mode.
+
+
 `stats-core`, `stats-radio`, `stats-packets`, `log` (print the captured log),
 `erase` (factory reset, destructive) and `get prv.key`. For statistics over
 the radio use `-status`, which uses a binary request instead.

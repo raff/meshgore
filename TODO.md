@@ -101,6 +101,13 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    - Whether opening the port resets other boards (DTR/RTS), and whether
      `go.bug.st/serial` needs anything on Linux and Windows.
    - A node running both interfaces answers on both.
+   **Repeater console over serial: written, untested on a real repeater** (`console.go`,
+   `-serial-cli`). From the firmware source: 115200 baud, a command is a line ending
+   in CR (a bare LF does nothing), input is echoed, the reply is `  -> <text>`, there is
+   no prompt, and `stats-*`, `log`, `erase` and `get prv.key` work on serial only. To check
+   on hardware: the 600 ms quiet window against long replies (`log`), reboot and reopen,
+   a room server (it also echoes LF), and `-status`/`-watch` over the console (could map
+   to `stats-core` and friends).
 3. **Wi-Fi (TCP) companion**, lowest priority. Builds with `ENABLE_WIFI_INTERFACE` serve
    the same `<`/`>` framed protocol on a TCP port (default 5000, per the firmware source).
    With the transport interface in place this is a small addition: `-tcp=host:port`

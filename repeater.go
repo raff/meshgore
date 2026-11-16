@@ -369,6 +369,9 @@ func IsReadOnlyCommand(command string) bool {
 		return false
 	}
 	switch f[0] {
+	case "stats-core", "stats-radio", "stats-packets", "log":
+		// Serial console only: statistics and a dump of the captured log.
+		return len(f) == 1
 	case "ver", "board", "clock", "neighbors":
 		return len(f) == 1 // "clock sync" and "neighbors" with arguments are not reads
 	case "get":

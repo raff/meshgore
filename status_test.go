@@ -74,11 +74,11 @@ func TestCheck(t *testing.T) {
 func TestIsReadOnlyCommand(t *testing.T) {
 	safe := []string{"ver", "board", "clock", "CLOCK", " neighbors ", "get radio", "get acl", "get name",
 		"region", "region get *", "region list allowed", "region home", "region default",
-		"gps", "GPS", "gps advert", "sensor list", "sensor list 8", "sensor get gps"}
+		"stats-core", "stats-radio", "stats-packets", "log", "gps", "GPS", "gps advert", "sensor list", "sensor list 8", "sensor get gps"}
 	unsafe := []string{"", "reboot", "poweroff", "clkreboot", "clock sync", "time 1700000000", "advert",
 		"advert.zerohop", "erase", "start ota", "set name x", "set radio 910.5,62.5,7,5", "tempradio 910,62.5,7,5,10",
 		"password hunter2", "get prv.key", "get", "get radio extra", "region home X", "region default X",
-		"region put X", "region save", "gps on", "gps off", "gps sync", "gps setloc", "gps advert share",
+		"log erase", "log start", "stats-core x", "erase", "region put X", "region save", "gps on", "gps off", "gps sync", "gps setloc", "gps advert share",
 		"sensor set gps 1", "sensor list x", "sensor get", "sensor", "log erase", "setperm abc 1", "neighbor.remove abc", "neighbors x"}
 	for _, c := range safe {
 		if !IsReadOnlyCommand(c) {

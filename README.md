@@ -78,6 +78,23 @@ native USB port ignores). Tried on a LilyGo T-Deck (wadamesh fork, fw v27) over 
 build is Bluetooth only. Opening a port can reset some boards
 (ESP32 boards with a USB-serial chip reset when DTR toggles).
 
+### Repeater or room server on USB
+
+A repeater's USB port is a text console, not the companion protocol, so `-serial` alone
+fails on it. Add `-serial-cli`:
+
+```
+./mc -serial=/dev/cu.usbmodem14201 -serial-cli -cmd ver -cmd stats-core
+./mc -serial=/dev/cu.usbmodem14201 -serial-cli -safe=false -cmd reboot -cmd ver
+```
+
+There is no login or password, and no radio hop; commands run on the node itself, so
+the serial-only ones work: `stats-core`, `stats-radio`, `stats-packets` and `log` are
+allowed in safe mode, `erase` and `get prv.key` need `-safe=false` (see `CLI.md`).
+The console has no prompt or reply marker, so a reply ends after about 0.6 s of
+silence; a command that never answers (`reboot`) takes 3 s. `reboot` waits for the
+port to come back (`-reconnect-wait`). Not tried on a real repeater yet.
+
 ## Usage
 
 ### Look at the companion
@@ -398,6 +415,7 @@ output plus a non-zero exit as a failure.
 | `-healthcheck` | | code to send on `#healthcheck`, then exit |
 | `-healthcheck-wait` | 0 | wait this long for the code to appear on the channel |
 | `-serial` | | connect over USB serial: the port, or `list` to show the ports |
+| `-serial-cli` | off | with `-serial`: the port is a repeater or room server's text console; `-cmd` runs on it directly |
 | `-baud` | 115200 | with `-serial`: baud rate |
 | `-repeater` | | repeater to administer: name, hex key prefix or full key |
 | `-password` | | repeater admin password (or `MC_PASSWORD`) |

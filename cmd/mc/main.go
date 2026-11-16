@@ -21,6 +21,7 @@ import (
 func main() {
 	name := flag.String("name", "", "Meshcore device name")
 	serialPort := flag.String("serial", "", "connect over USB serial instead of Bluetooth: the port (e.g. /dev/cu.usbmodem14301), or \"list\" to show the ports")
+	serialCLI := flag.Bool("serial-cli", false, "with -serial: the port is a repeater or room server's text console, not a companion; -cmd runs on it directly (no login)")
 	baud := flag.Int("baud", meshgore.DefaultBaud, "with -serial: baud rate (ignored by native USB ports)")
 	healthcheck := flag.String("healthcheck", "", "code to send on the #healthcheck channel")
 	listen := flag.Duration("listen", 15*time.Second, "how long to wait for new messages (0 to exit after syncing)")
@@ -76,6 +77,16 @@ func main() {
 
 	meshgore.Debug = *verbose
 	meshgore.Logf = func(format string, args ...any) { fmt.Printf(format+"\n", args...) }
+
+	if *serialCLI {
+		if *serialPort == "" || *serialPort == "list" {
+			log.Fatal("-serial-cli needs -serial=<port>")
+		}
+		if len(cmds) == 0 {
+			log.Fatal("-serial-cli needs at least one -cmd")
+		}
+		os.Exit(runConsole(ctx, *serialPort, *baud, cmds, *safe, *cmdTimeout, *reconnectWait, *jsonOut, realStdout))
+	}
 
 	var l *meshgore.Link
 	if *serialPort == "list" {
@@ -546,4 +557,55 @@ func runVars(l *meshgore.Link) int {
 		fmt.Println("GPS: no \"gps\" variable, so GPS support is probably not compiled into this build.")
 	}
 	return exitOK
+}
+
+// runConsole runs commands on a repeater or room server's serial console.
+func runConsole(ctx context.Context, port string, baud int, cmds []string, safe bool, timeout, wait time.Duration, asJSON bool, out *os.File) int {
+	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
+	if safe {
+		for _, c := range cmds {
+			if !meshgore.IsReadOnlyCommand(c) {
+				return fail(fmt.Errorf("%q is not a known read-only command; use -safe=false to allow it (see CLI.md)", c))
+			}
+		}
+	}
+	con, err := meshgore.OpenConsole(port, baud)
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { con.Close() }()
+
+	var res []cmdResult
+	code := exitOK
+	for _, c := range cmds {
+		fmt.Printf("> %s\n", c)
+		lines, err := con.Run(c, timeout)
+		if err != nil {
+			code = fail(err)
+			break
+		}
+		if len(lines) == 0 {
+			fmt.Println("(no reply)")
+		}
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		res = append(res, cmdResult{c, lines})
+		if f := strings.Fields(c); len(f) > 0 && (f[0] == "reboot" || f[0] == "clkreboot") {
+			rctx, cancel := context.WithTimeout(ctx, wait)
+			n, err := con.Reopen(rctx)
+			cancel()
+			if err != nil {
+				code = fail(fmt.Errorf("the node did not come back within %s: %w", wait, err))
+				break
+			}
+			con = n
+		}
+	}
+	if asJSON {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		enc.Encode(map[string]any{"ok": code == exitOK, "commands": res})
+	}
+	return code
 }
