@@ -445,8 +445,20 @@ func parseContactEnd(f []byte) uint32 {
 	return binary.LittleEndian.Uint32(f[1:])
 }
 
+// MaxChannelText is the longest channel message, in bytes, that the companion protocol
+// doc allows. The node sends your name ahead of the text, and a longer message would be cut
+// off without a word, so SendChannelMessage refuses it. The limit for a direct message is
+// not confirmed, so none is enforced there.
+const MaxChannelText = 133
+
 // SendChannelMessage posts text to channel idx. It returns the expected-ACK tag.
 func (c *Client) SendChannelMessage(idx int, text string) (tag uint32, flood bool, err error) {
+	if text == "" {
+		return 0, false, errors.New("SEND_CHANNEL_MESSAGE: empty message")
+	}
+	if len(text) > MaxChannelText {
+		return 0, false, fmt.Errorf("SEND_CHANNEL_MESSAGE: the message is %d bytes; a channel message holds at most %d", len(text), MaxChannelText)
+	}
 	cmd := []byte{cmdSendChanMsg, 0x00, byte(idx), 0, 0, 0, 0}
 	binary.LittleEndian.PutUint32(cmd[3:], uint32(time.Now().Unix()))
 	cmd = append(cmd, text...)

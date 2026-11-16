@@ -251,3 +251,13 @@ func TestBuildSetCustomVar(t *testing.T) {
 		t.Error("colon in name accepted")
 	}
 }
+
+func TestSendChannelMessageLimits(t *testing.T) {
+	// the checks come before anything is sent, so a client with no connection is enough
+	c := &Client{}
+	for _, text := range []string{"", strings.Repeat("a", MaxChannelText+1), strings.Repeat("é", MaxChannelText/2+1)} {
+		if _, _, err := c.SendChannelMessage(0, text); err == nil || strings.Contains(err.Error(), "timeout") {
+			t.Errorf("%d bytes: got %v, want a refusal", len(text), err)
+		}
+	}
+}

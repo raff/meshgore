@@ -7,14 +7,11 @@ An item counts as done only after a run against a real node.
 
 ## To build
 
-1. **Channel message length check.** The doc says channel messages are limited to 133
-   characters. Check it in `SendChannelMessage` and say so. The limit for direct messages is
-   unconfirmed, so do not enforce one there.
-2. **Healthcheck delivery without an echo.** `healthcheck -wait` works only if another node
+1. **Healthcheck delivery without an echo.** `healthcheck -wait` works only if another node
    repeats the code (it does between the T1000-E and the T-Deck). Radio log pushes (`0x88`)
    might show repeaters rebroadcasting our packet; the doc gives no layout, so work it out from
    real frames first.
-3. **Companion commands not used yet.** From the firmware's command list; `meshcore_py` uses the
+2. **Companion commands not used yet.** From the firmware's command list; `meshcore_py` uses the
    same numbers. Layouts are not checked, so confirm them in the firmware source before building:
    - `0x3F`/`0x40` (63/64) default flood scope set/get, and `0x36` (54) flood scope key: the
      repeater's `region default` / `region home`.
@@ -24,11 +21,11 @@ An item counts as done only after a run against a real node.
      `0x32` (50) a binary request, `0x34` (52) path discovery.
    - `0x33` (51) factory reset, payload the text `reset`: left out on purpose, since it formats
      the node.
-4. **Wi-Fi (TCP) companion**, not wanted for now. Builds with `ENABLE_WIFI_INTERFACE` serve the
+3. **Wi-Fi (TCP) companion**, not wanted for now. Builds with `ENABLE_WIFI_INTERFACE` serve the
    same `<`/`>` framed protocol on a TCP port (default 5000, per the firmware source). With the
    transport interface in place it is small: `-tcp=host:port`, a transport over `net.Conn`,
    reusing `frameReader` and `frameForNode`.
-5. **Buzzer.** Document the button gesture in the README (a triple click flips it on the T1000-E,
+4. **Buzzer.** Document the button gesture in the README (a triple click flips it on the T1000-E,
    still to confirm on the device). Nothing more is possible until the firmware has a command
    (see the findings below).
 
@@ -195,7 +192,8 @@ with `mc vars` after firmware updates.
 
 - Bluetooth scan (by service UUID or prefix, with a timeout), pairing retry, reconnect with backoff
 - Handshake, node and device info, channels, contacts with an incremental on-disk cache, messages
-- Direct messages with acknowledgement, retry and path reset; `send`; `healthcheck`; the contact
+- Direct messages with acknowledgement, retry and path reset; `send` (refuses over 133 bytes);
+  `healthcheck`; the contact
   list with type, name and age filters, sorting and JSON
 - Node settings: `set name|position|share-location|multi-acks`, `radio`, `tuning`, `clock`, `gps`,
   `advert`, `auto-add`, `path-hash`; `discover`, `contact remove`, `channel add|remove`

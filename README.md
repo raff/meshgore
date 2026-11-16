@@ -194,7 +194,9 @@ With `-wait`, it then waits for a message containing the code to
 appear on that channel and exits 1 if none does. That only works if something
 else repeats the code back: a node never receives its own channel message and
 channel messages have no acknowledgement. `send CHANNEL TEXT...` sends any text on
-any channel (by name or slot).
+any channel (by name or slot). A channel message holds at most 133 bytes (the node adds your name
+in front); a longer one is refused instead of being cut off silently. Direct messages have no
+limit enforced, since theirs is not confirmed.
 
 ### Set up a fresh node
 
