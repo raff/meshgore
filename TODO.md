@@ -232,8 +232,11 @@ Still to do:
   it, `exit` to go back.
 - `safe on|off` inside a session; a script mode for a non-terminal stdin.
 - Commands print with `fmt.Print*` and exit codes today; a REPL shows the code on failure.
-- Tried on hardware: the new command line on a T1000-E (BLE), a repeater (through the
-  companion, and on its serial console). Live message listening had no traffic to show.
+- Tried on hardware: the new command line on a T1000-E (BLE), a T-Deck (serial), a repeater
+  (through the companion, and on its serial console). Between the T1000-E and the T-Deck, both
+  ways: `dm` (acked in 667 ms and 918 ms, text received), `healthcheck` (code received on the
+  other node) and `send '#healthcheck'` with `healthcheck -wait` on the receiver (`healthcheck
+  OK`), and `messages -listen` showing messages live on both transports.
 
 ## Housekeeping
 
