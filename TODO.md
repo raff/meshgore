@@ -117,6 +117,12 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
 
 ## Still to test on hardware
 
+- Repeater clock from GPS: on the SenseCAP Solar repeater (v1.18.0), enabling GPS
+  (`gps on`) was enough: with a fix (12 satellites) `clock` matched this computer. The
+  clock had read May 2024 before. Not checked: whether it is set again after a reboot,
+  and how long that takes. A companion has no `gps sync`; whether the T1000-E sets its
+  own clock from GPS is untested (`-sync-clock` sets it from this computer).
+
 - The T1000-E may have an accelerometer, but this firmware's `-telemetry` does not
   list one.
 - `-set-name`: afterwards the `Node "..."` line should show the new name.
