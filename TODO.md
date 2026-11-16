@@ -95,9 +95,9 @@ Safe mode: `get <setting>` (one argument) is allowed on the companion too, so
    `-watch` work the same. Framing, from the firmware's `ArduinoSerialInterface`: `<`
    from the app, `>` from the node, a 2-byte little-endian length, no checksum, at most
    176 bytes, 115200 baud. Open:
-   - Try `-cmd=reboot` and `-watch` over serial: the port disappears while the node
-     restarts, and `Reconnect` retries with backoff; check how long macOS takes to bring
-     the device node back.
+   - `-cmd=reboot -cmd ver` over serial works on the T-Deck: the first two reconnect
+     attempts time out while it boots (about 6 s), the third succeeds. `-watch` over
+     serial is untried.
    - Whether opening the port resets other boards (DTR/RTS), and whether
      `go.bug.st/serial` needs anything on Linux and Windows.
    - A node running both interfaces answers on both.
