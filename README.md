@@ -228,6 +228,33 @@ Replies from `get` start with `> `.
 - `-watch=5m` without `-repeater` polls the companion's own statistics, with `-csv`,
   `-json`, `-min-battery` and `-max-noise` as for a repeater.
 
+### Contacts, channels and neighbours
+
+```
+./mc -name=MyNode -auto-add=show
+./mc -name=MyNode -auto-add=repeater,room -auto-add-max-hops=2 -auto-add-overwrite=on
+./mc -name=MyNode -auto-add=all                 # the default: save every advert
+./mc -name=MyNode -path-hash-mode=1
+./mc -name=MyNode -discover=repeater            # who is in direct range?
+./mc -name=MyNode -remove-contact=SomeNode
+./mc -name=MyNode -remove-channel='#test'       # by name or slot number
+```
+
+- `-auto-add` chooses which adverts the node saves as contacts: `all`, `none`, or a list of
+  `chat`, `repeater`, `room`, `sensor`. A list or `none` turns on the node's "manual add" switch
+  (otherwise the type list is ignored); `all` turns it off. `-auto-add-max-hops` limits it to
+  nodes within that many hops (0 = any), and `-auto-add-overwrite=on` lets a full node
+  replace its oldest contact. Adverts that are not saved still show up as "new advert" pushes.
+- `-path-hash-mode` sets how many bytes of each hop's hash flood packets carry (mode + 1).
+  The current mode is in the node info.
+- `-discover` sends a one-hop request and lists the nodes that answer, with the SNR each
+  heard the other at. Names come from the contact cache. Repeaters answer at most 4 times in
+  2 minutes, so repeat it sparingly.
+- `-remove-contact` deletes a contact from the node and from the local cache. The node saves
+  it again when it hears another advert, if auto-add allows that type.
+- `-remove-channel` empties a slot. The firmware has no delete: it accepts an empty name and
+  zero secret and then ignores the slot. Slot 0 (Public) needs `-channel-overwrite`.
+
 ### GPS on the companion
 
 ```
@@ -446,6 +473,14 @@ output plus a non-zero exit as a failure.
 | `-share-location` | | `share` or `none`: whether adverts carry the location |
 | `-multi-acks` | | extra acks to send, 0..255 |
 | `-telemetry` | off | print sensor readings: the repeater's with `-repeater`, otherwise the companion's own (battery, temperature, GPS) |
+| `-auto-add` | | which adverts become contacts: `all`, `none`, a list of types, or `show` |
+| `-auto-add-overwrite` | | `on` or `off`: replace the oldest contact when full |
+| `-auto-add-max-hops` | | only auto-add nodes within this many hops (0 = any) |
+| `-path-hash-mode` | | bytes per hop hash in flood packets, minus one (0..2) |
+| `-discover` | | list nodes in direct range: `all` or a list of types |
+| `-discover-wait` | 8s | how long to collect discovery answers |
+| `-remove-contact` | | delete a contact from the node and the cache |
+| `-remove-channel` | | empty a channel slot (number or name) |
 | `-gps` | | switch the companion's GPS `on` or `off` (builds with GPS only) |
 | `-gps-interval` | -1 | GPS update interval in seconds, 0..86400 (only on builds that list `gps_interval`) |
 | `-advert` | | make the companion advertise itself: `flood` or `zerohop` |

@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -34,12 +35,24 @@ type nodeActions struct {
 	showClock  bool
 	showTuning bool
 	showTele   bool
+
+	node          string // the companion's name, for the contact cache
+	autoAdd       string // "show", "all", "none" or a list of types
+	autoOverwrite string // "on" or "off"
+	autoHops      string // 0..64
+	pathHash      string // 0..2
+	discover      string // node types to look for
+	discoverWait  time.Duration
+	removeContact string
+	removeChannel string
 }
 
 func (a nodeActions) any() bool {
 	return a.name != "" || a.position != "" || a.channel != "" || a.advert != "" || a.gps != "" || a.interval >= 0 ||
 		a.radio != "" || a.syncClock || a.rxDelay != "" || a.airtime != "" || a.shareLoc != "" || a.multiAcks != "" ||
-		a.showClock || a.showTuning || a.showTele
+		a.showClock || a.showTuning || a.showTele ||
+		a.autoAdd != "" || a.autoOverwrite != "" || a.autoHops != "" || a.pathHash != "" || a.discover != "" ||
+		a.removeContact != "" || a.removeChannel != ""
 }
 
 // parsePosition parses "lat,lon" in degrees.
@@ -153,6 +166,23 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		}
 	}
 
+	autoCfg, err := parseAutoAdd(a)
+	if err != nil {
+		return fail(err)
+	}
+	var hash int
+	if a.pathHash != "" {
+		if hash, err = strconv.Atoi(a.pathHash); err != nil || hash < 0 || hash > 2 {
+			return fail(fmt.Errorf("-path-hash-mode must be 0, 1 or 2, not %q", a.pathHash))
+		}
+	}
+	var discoverTypes byte
+	if a.discover != "" {
+		if discoverTypes, err = parseTypes(a.discover); err != nil || discoverTypes == 0 {
+			return fail(fmt.Errorf("-discover wants a list of chat, repeater, room, sensor (or all), not %q", a.discover))
+		}
+	}
+
 	c := l.Client
 	if a.name != "" {
 		if err := c.SetName(a.name); err != nil {
@@ -212,6 +242,7 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		if err := c.SetOtherParams(p); err != nil {
 			return fail(err)
 		}
+		l.Self.AdvLocPolicy, l.Self.MultiAcks = p.AdvLocPolicy, p.MultiAcks
 		fmt.Printf("Advert location: %s, multi-acks: %d\n", map[byte]string{0: "none", 1: "share"}[p.AdvLocPolicy], p.MultiAcks)
 	}
 	if a.syncClock {
@@ -220,6 +251,27 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 			return fail(fmt.Errorf("%w (the firmware refuses to move the clock backwards)", err))
 		}
 		fmt.Println("Clock set to", now.UTC().Format(time.DateTime), "UTC")
+	}
+	if autoCfg.set() {
+		if code := applyAutoAdd(l, autoCfg); code != exitOK {
+			return code
+		}
+	}
+	if a.pathHash != "" {
+		if err := c.SetPathHashMode(hash); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Path hash mode set to %d (%d-byte hashes)\n", hash, hash+1)
+	}
+	if a.removeContact != "" {
+		if code := removeContact(c, a.node, a.removeContact); code != exitOK {
+			return code
+		}
+	}
+	if a.removeChannel != "" {
+		if code := removeChannel(c, a); code != exitOK {
+			return code
+		}
 	}
 	if a.channel != "" {
 		if code := addChannel(c, a, secret, generated); code != exitOK {
@@ -231,6 +283,11 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 			return fail(err)
 		}
 		fmt.Printf("Advert (%s) sent\n", a.advert)
+	}
+	if a.discover != "" {
+		if code := runDiscover(c, a, discoverTypes); code != exitOK {
+			return code
+		}
 	}
 	if a.showClock {
 		t, err := c.DeviceTime()
@@ -300,6 +357,224 @@ func addChannel(c *meshgore.Client, a nodeActions, secret [16]byte, generated bo
 	fmt.Printf("Channel %q added in slot %d\n", a.channel, slot)
 	if generated {
 		fmt.Printf("Secret (keep it; it cannot be shown again, and others need it to join): %x\n", secret)
+	}
+	return exitOK
+}
+
+// parseTypes turns "repeater,room" (or "all") into a mask of advert type bits.
+func parseTypes(spec string) (byte, error) {
+	var mask byte
+	for _, t := range strings.Split(spec, ",") {
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "all":
+			mask |= meshgore.AutoAddAllTypes
+		case "chat":
+			mask |= meshgore.AutoAddChat
+		case "repeater":
+			mask |= meshgore.AutoAddRepeater
+		case "room":
+			mask |= meshgore.AutoAddRoom
+		case "sensor":
+			mask |= meshgore.AutoAddSensor
+		case "none", "":
+		default:
+			return 0, fmt.Errorf("unknown node type %q", t)
+		}
+	}
+	return mask, nil
+}
+
+// autoAddChange is what -auto-add, -auto-add-overwrite and -auto-add-max-hops ask for.
+type autoAddChange struct {
+	show      bool
+	manual    *bool // turn manual add on or off
+	types     *byte // the type bits to set
+	overwrite *bool
+	hops      *byte
+}
+
+func (c autoAddChange) set() bool {
+	return c.show || c.manual != nil || c.types != nil || c.overwrite != nil || c.hops != nil
+}
+
+// parseAutoAdd checks the auto-add flags. "all" makes the node add every type (manual
+// add off); "none" or a list of types turns manual add on, so only those are added.
+func parseAutoAdd(a nodeActions) (autoAddChange, error) {
+	var c autoAddChange
+	b := func(v bool) *bool { return &v }
+	switch spec := strings.ToLower(strings.TrimSpace(a.autoAdd)); spec {
+	case "":
+	case "show":
+		c.show = true
+	case "all":
+		m, all := false, byte(meshgore.AutoAddAllTypes)
+		c.manual, c.types = &m, &all
+	default:
+		mask, err := parseTypes(spec)
+		if err != nil {
+			return c, fmt.Errorf("-auto-add: %w (use all, none, show or a list of chat, repeater, room, sensor)", err)
+		}
+		m := true
+		c.manual, c.types = &m, &mask
+	}
+	switch a.autoOverwrite {
+	case "":
+	case "on", "off":
+		c.overwrite = b(a.autoOverwrite == "on")
+	default:
+		return c, fmt.Errorf("-auto-add-overwrite must be on or off, not %q", a.autoOverwrite)
+	}
+	if a.autoHops != "" {
+		n, err := strconv.Atoi(a.autoHops)
+		if err != nil || n < 0 || n > 64 {
+			return c, fmt.Errorf("-auto-add-max-hops must be 0..64 (0 = no limit), not %q", a.autoHops)
+		}
+		h := byte(n)
+		c.hops = &h
+	}
+	return c, nil
+}
+
+// applyAutoAdd reads the node's auto-add settings, changes what was asked and
+// prints the result. The type bits count only while manual add is on, which is a
+// separate flag (SET_OTHER_PARAMS), so both are written.
+func applyAutoAdd(l *meshgore.Link, ch autoAddChange) int {
+	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
+	cur, err := l.Client.GetAutoAdd()
+	if err != nil {
+		return fail(err)
+	}
+	manual := l.Self.ManualAddContacts
+	if ch.show && ch.manual == nil && ch.overwrite == nil && ch.hops == nil {
+		fmt.Println(cur.Describe(manual))
+		return exitOK
+	}
+	next := cur
+	if ch.types != nil {
+		next.Config = next.Config&^meshgore.AutoAddAllTypes | *ch.types
+	}
+	if ch.overwrite != nil {
+		if *ch.overwrite {
+			next.Config |= meshgore.AutoAddOverwriteOldest
+		} else {
+			next.Config &^= meshgore.AutoAddOverwriteOldest
+		}
+	}
+	if ch.hops != nil {
+		next.MaxHops = *ch.hops
+	}
+	if next != cur {
+		if err := l.Client.SetAutoAdd(next); err != nil {
+			return fail(err)
+		}
+	}
+	if ch.manual != nil && *ch.manual != manual {
+		p := meshgore.OtherParamsOf(l.Self)
+		p.ManualAddContacts = *ch.manual
+		if err := l.Client.SetOtherParams(p); err != nil {
+			return fail(err)
+		}
+		l.Self.ManualAddContacts, manual = *ch.manual, *ch.manual
+	}
+	fmt.Println(next.Describe(manual))
+	return exitOK
+}
+
+// removeContact deletes a contact from the node and from the local cache.
+func removeContact(c *meshgore.Client, node, target string) int {
+	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
+	ct, err := resolveContact(c, node, target)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("Removing contact %q (%s, key %x)\n", ct.Name, ct.TypeName(), ct.PublicKey[:6])
+	if err := c.RemoveContact(ct.PublicKey); err != nil {
+		return fail(err)
+	}
+	cached, lastMod := loadContactCache(node)
+	kept := cached[:0]
+	for _, x := range cached {
+		if x.PublicKey != ct.PublicKey {
+			kept = append(kept, x)
+		}
+	}
+	if len(kept) != len(cached) {
+		saveContactCache(node, kept, lastMod)
+	}
+	fmt.Println("Removed. The node adds it again if it hears another advert and auto-add allows it.")
+	return exitOK
+}
+
+// removeChannel empties a channel slot, given by number or by name.
+func removeChannel(c *meshgore.Client, a nodeActions) int {
+	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
+	chans, err := c.Channels()
+	if err != nil {
+		return fail(err)
+	}
+	var target *meshgore.Channel
+	if n, err := strconv.Atoi(a.removeChannel); err == nil {
+		for _, ch := range chans {
+			if ch.Index == n {
+				target = ch
+			}
+		}
+		if target == nil {
+			return fail(fmt.Errorf("channel slot %d is empty or does not exist", n))
+		}
+	} else {
+		for _, ch := range chans {
+			if ch.Name == a.removeChannel {
+				target = ch
+			}
+		}
+		if target == nil {
+			return fail(fmt.Errorf("no channel named %q", a.removeChannel))
+		}
+	}
+	if target.Index == 0 && !a.force {
+		return fail(errors.New("slot 0 is the Public channel; use -channel-overwrite to remove it anyway"))
+	}
+	fmt.Printf("Removing channel [%d] %s\n", target.Index, target.Name)
+	if err := c.ClearChannel(target.Index); err != nil {
+		return fail(err)
+	}
+	if ch, err := c.GetChannel(target.Index); err == nil && ch.Empty() {
+		fmt.Println("Removed.")
+	} else {
+		fmt.Println("Cleared; the slot may still read back with its old name until the node is restarted.")
+	}
+	return exitOK
+}
+
+// runDiscover asks nearby nodes to identify themselves and prints the answers.
+func runDiscover(c *meshgore.Client, a nodeActions, types byte) int {
+	wait := a.discoverWait
+	if wait <= 0 {
+		wait = 8 * time.Second
+	}
+	fmt.Printf("Discovering %s within radio range (%s)...\n", a.discover, wait)
+	ns, err := c.Discover(types, wait)
+	if err != nil {
+		fmt.Println("error:", err)
+		return exitFail
+	}
+	names := map[string]string{}
+	if cached, _ := loadContactCache(a.node); cached != nil {
+		for _, ct := range cached {
+			names[string(ct.PublicKey[:8])] = ct.Name
+		}
+	}
+	if len(ns) == 0 {
+		fmt.Println("No answer. A repeater answers a discovery request at most 4 times in 2 minutes.")
+	}
+	for _, n := range ns {
+		name := names[string(n.Key[:8])]
+		if name == "" {
+			name = "(unknown)"
+		}
+		fmt.Printf("  %-24s %-8s key %x  heard us %+.2f dB, we heard it %+.2f dB (RSSI %.0f)\n",
+			name, map[int]string{1: "chat", 2: "repeater", 3: "room", 4: "sensor"}[n.Type], n.Key[:6], n.TheirSNR, n.SNR, n.RSSI)
 	}
 	return exitOK
 }

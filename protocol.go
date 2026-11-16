@@ -240,6 +240,10 @@ type DeviceInfo struct {
 	FirmwareBuild string
 	Model         string
 	Version       string
+
+	// From firmware v10+, in an 82-byte reply.
+	HasPathHash  bool
+	PathHashMode byte // hashes are PathHashMode+1 bytes per hop
 }
 
 // DeviceQuery asks the device for firmware/model details.
@@ -272,6 +276,9 @@ func parseDeviceInfo(f []byte) (*DeviceInfo, error) {
 	d.FirmwareBuild = cstr(f[8:20])
 	d.Model = cstr(f[20:60])
 	d.Version = cstr(f[60:80])
+	if len(f) >= 82 {
+		d.HasPathHash, d.PathHashMode = true, f[81]
+	}
 	return d, nil
 }
 

@@ -17,7 +17,8 @@ is a fix) and the position line in the node info are all in. What is left:
 
 ## Parity: repeater `-cmd` vs companion flags
 
-Done on both: status and `-watch` (`-status`, `-watch`, `-csv`, thresholds), advert,
+Done on both: neighbour discovery (`discover.neighbors` / `-discover`), `path.hash.mode`
+(`-path-hash-mode`), status and `-watch` (`-status`, `-watch`, `-csv`, thresholds), advert,
 name, position, GPS on/off, clock (`clock` / `-clock`, `-sync-clock`), radio
 (`set radio` / `-set-radio`; `set tx` through `-cmd`), tuning (`rxdelay`, `af` /
 `-rx-delay`, `-airtime-factor`), advert location policy (`gps advert` /
@@ -28,9 +29,6 @@ position the node reports.
 Not done, and why:
 - **`tempradio`**: the companion firmware has no temporary radio change. Bluetooth
   is unaffected by a bad radio setting, so `-set-radio` can always be undone.
-- **`discover.neighbors`**: the companion would use `CMD_SEND_CONTROL_DATA` (`0x37`),
-  but its payload is defined outside `MyMesh.cpp`; find it in the firmware's
-  control-data code before building on it. `-contacts` already lists heard adverts.
 - **Factory reset** (`CMD_FACTORY_RESET` `0x33`, payload the text `reset`): left out
   on purpose, since it formats the node.
 - **`gps sync`, `gps setloc`, GPS satellites and fix state**: no companion command.
@@ -137,20 +135,16 @@ Possible work, in order of effort:
 ## Companion commands not used yet
 
 From the firmware's command list (and `meshcore_py`, which uses the same numbers). Layouts
-are not checked unless noted; confirm against the firmware source before building:
+are not checked; confirm against the firmware source before building. Auto-add config (58/59),
+path hash mode (61) and control data for discovery (55) are done:
 
-- `0x3A`/`0x3B` (58/59) **auto-add config** set/get: a bit mask, bit 0 "overwrite oldest",
-  bits 1-4 which contact types are added automatically. This is the real version of the
-  manual-add switch we write through `SET_OTHER_PARAMS`.
-- `0x3D` (61) **path hash mode** (bytes per hop = mode + 1): `[0x3d][0x00][mode]` in
-  `meshcore_py`. Repeater equivalent: `get/set path.hash.mode`.
 - `0x3F`/`0x40` (63/64) **default flood scope** set/get, and `0x36` (54) flood scope key:
   the repeater's `region default` / `region home`.
 - `0x3C` (60) **allowed repeat frequencies** (read): which radio frequencies may use the
   "repeat" option of `SET_RADIO_PARAMS`.
 - `0x3E` (62) send non-text **data on a channel**, `0x41` (65) send a **raw packet**,
   `0x39` (57) **anonymous request**, `0x32` (50) **binary request**, `0x34` (52) path
-  discovery, `0x37` (55) control data (neighbour discovery, see above).
+  discovery.
 - `0x33` (51) factory reset, `0x13` (19) reboot (needs the text `reboot`); `-cmd=reboot`
   already covers the second.
 - Differences seen: `meshcore_py` sends the TX power as a 4-byte integer where the firmware
@@ -159,6 +153,11 @@ are not checked unless noted; confirm against the firmware source before buildin
 
 ## Still to test on hardware
 
+- `-remove-contact`: written and unit-tested for the frame, not run on a real contact yet
+  (it needs a contact you can afford to lose; the node re-adds it on its next advert).
+- `-discover` and `-remove-channel`, `-auto-add*`, `-path-hash-mode`: tried on the T1000-E.
+  `-discover` found the repeater with both SNR values; only repeaters answer in our tests
+  (a room server or sensor in range would show whether the type filter works for them).
 - Repeater clock from GPS: on the SenseCAP Solar repeater (v1.18.0), enabling GPS
   (`gps on`) was enough: with a fix (12 satellites) `clock` matched this computer. The
   clock had read May 2024 before. Not checked: whether it is set again after a reboot,
@@ -174,9 +173,7 @@ are not checked unless noted; confirm against the firmware source before buildin
 
 ## Still open from set-up
 
-- Not yet possible: **removing a channel**. The firmware refuses an all-zero secret
-  through this command, so it is not clear how to clear a slot. Find out whether
-  `SET_CHANNEL` with an empty name does it.
+- Nothing left from set-up.
 
 ## Ideas we discussed
 
@@ -191,8 +188,6 @@ are not checked unless noted; confirm against the firmware source before buildin
   frames before building on it.
 - **Show the contact list in a useful way:** sort, filter by type
   (`-contacts=repeater`), hide stale ones.
-- **Remove a contact** from the node (`REMOVE_CONTACT` = `0x0F`; the firmware source confirms the number), and prune it from the
-  cache, which an incremental sync cannot do. Today only `-full-sync` prunes.
 
 ## Decided against
 
@@ -225,6 +220,7 @@ are not checked unless noted; confirm against the firmware source before buildin
 
 - Bluetooth scan, pairing retry, reconnect with backoff
 - Handshake, device and node info, channels, contacts, message sync
+- `-auto-add*`, `-path-hash-mode`, `-discover`, `-remove-channel`, `-remove-contact`
 - Channel messages and `-healthcheck`, with optional wait for an echo
 - Incremental contact sync with an on-disk cache
 - Direct messages with acknowledgement, retry and path reset; node-reported

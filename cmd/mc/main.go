@@ -63,6 +63,14 @@ func main() {
 	showClock := flag.Bool("clock", false, "print the companion's clock")
 	showTuning := flag.Bool("tuning", false, "print the companion's receive delay and airtime factor")
 	showTele := flag.Bool("telemetry", false, "print sensor readings: the repeater's with -repeater, else the companion's own (including a GPS position if it has a fix)")
+	autoAdd := flag.String("auto-add", "", "which adverts the companion saves as contacts: \"all\", \"none\", a list of chat,repeater,room,sensor, or \"show\"")
+	autoOverwrite := flag.String("auto-add-overwrite", "", "\"on\" or \"off\": replace the oldest contact when the list is full")
+	autoHops := flag.String("auto-add-max-hops", "", "only auto-add nodes up to this many hops away (0..64, 0 = no limit)")
+	pathHash := flag.String("path-hash-mode", "", "bytes of each hop's hash in flood packets, minus one: 0, 1 or 2")
+	discover := flag.String("discover", "", "ask nodes in direct radio range to identify themselves: all, or a list of chat,repeater,room,sensor")
+	discoverWait := flag.Duration("discover-wait", 8*time.Second, "with -discover: how long to collect answers")
+	removeContactFlag := flag.String("remove-contact", "", "delete this contact (name, hex key prefix or full key) from the companion")
+	removeChannelFlag := flag.String("remove-channel", "", "empty this channel slot (number or name); slot 0 also needs -channel-overwrite")
 	flag.Parse()
 
 	// In JSON mode stdout is reserved for the result, so progress text (which
@@ -155,6 +163,8 @@ func main() {
 		gps: *gps, interval: *gpsInterval,
 		radio: *setRadio, syncClock: *syncClock, rxDelay: *rxDelay, airtime: *airtimeFactor,
 		shareLoc: *shareLoc, multiAcks: *multiAcks, showClock: *showClock, showTuning: *showTuning, showTele: *showTele && *repeater == "",
+		node: *name, autoAdd: *autoAdd, autoOverwrite: *autoOverwrite, autoHops: *autoHops, pathHash: *pathHash,
+		discover: *discover, discoverWait: *discoverWait, removeContact: *removeContactFlag, removeChannel: *removeChannelFlag,
 	}); acts.any() {
 		os.Exit(runNodeActions(l, acts))
 	}
@@ -469,6 +479,9 @@ func printNodeInfo(l *meshgore.Link) {
 	if d := l.Client.Info; d != nil {
 		fmt.Printf("Device: %s fw v%d (%s, build %s)\n  max contacts %d, max channels %d\n",
 			d.Model, d.FirmwareVer, d.Version, d.FirmwareBuild, d.MaxContacts, d.MaxChannels)
+		if d.HasPathHash {
+			fmt.Printf("  path hash mode %d (%d-byte hashes)\n", d.PathHashMode, d.PathHashMode+1)
+		}
 	}
 }
 

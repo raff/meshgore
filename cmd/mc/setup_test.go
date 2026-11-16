@@ -67,3 +67,38 @@ func TestNodeActionsAny(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTypes(t *testing.T) {
+	for spec, want := range map[string]byte{
+		"repeater": 0x04, "chat,repeater": 0x06, "all": 0x1E, "none": 0, "Room, Sensor": 0x18,
+	} {
+		if got, err := parseTypes(spec); err != nil || got != want {
+			t.Errorf("%q: got %#x, %v; want %#x", spec, got, err, want)
+		}
+	}
+	if _, err := parseTypes("router"); err == nil {
+		t.Error("unknown type accepted")
+	}
+}
+
+func TestParseAutoAdd(t *testing.T) {
+	c, err := parseAutoAdd(nodeActions{autoAdd: "repeater,room", autoOverwrite: "on", autoHops: "3"})
+	if err != nil || c.manual == nil || !*c.manual || *c.types != 0x0C || !*c.overwrite || *c.hops != 3 {
+		t.Errorf("%+v, %v", c, err)
+	}
+	c, _ = parseAutoAdd(nodeActions{autoAdd: "all"})
+	if *c.manual || *c.types != 0x1E {
+		t.Errorf("all: %+v", c)
+	}
+	if c, _ := parseAutoAdd(nodeActions{autoAdd: "show"}); !c.show || c.manual != nil {
+		t.Errorf("show: %+v", c)
+	}
+	if c, _ := parseAutoAdd(nodeActions{}); c.set() {
+		t.Error("nothing asked, but set() is true")
+	}
+	for _, bad := range []nodeActions{{autoAdd: "bogus"}, {autoOverwrite: "yes"}, {autoHops: "65"}, {autoHops: "x"}} {
+		if _, err := parseAutoAdd(bad); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}
