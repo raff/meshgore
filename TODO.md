@@ -141,6 +141,11 @@ builds):
   stays quiet, and the app decides what to notify. That is why the app's notification
   settings (new messages, DMs, channels) can only be phone-side; nothing in the firmware or
   docs lets the app send them to the device. The app's source was not available to check.
+- **Checked against the client libraries too** (`meshcore_py`; `meshcore.js` could not be
+  fetched). The firmware's full command list runs to 66 (`CMD_RUN_CLI_COMMAND`), the push
+  codes to `0x90`, and `meshcore_py` has the same numbers. None of it is about buzzer, sound,
+  alerts, mute, vibration or LED. The only notification-like items are pushes the device
+  always sends: `0x83` (message waiting) and `0x90` (contacts full).
 - **LED**: a status LED blinks faster when messages are waiting (`ui-new`); an RGB one with
   colours for battery, unread messages and connection on `ui-orig`. Not controllable.
 
@@ -154,6 +159,29 @@ Possible work, in order of effort:
    `CMD_SET_CUSTOM_VAR`) or a CLI command; `-vars` and `-cmd` would then work with no
    change here. Once a firmware has it, `-vars` lists it.
 4. Re-check after firmware updates: `mc -vars` and `mc -cmd "get <name>"` on a new build.
+
+## Companion commands not used yet
+
+From the firmware's command list (and `meshcore_py`, which uses the same numbers). Layouts
+are not checked unless noted; confirm against the firmware source before building:
+
+- `0x3A`/`0x3B` (58/59) **auto-add config** set/get: a bit mask, bit 0 "overwrite oldest",
+  bits 1-4 which contact types are added automatically. This is the real version of the
+  manual-add switch we write through `SET_OTHER_PARAMS`.
+- `0x3D` (61) **path hash mode** (bytes per hop = mode + 1): `[0x3d][0x00][mode]` in
+  `meshcore_py`. Repeater equivalent: `get/set path.hash.mode`.
+- `0x3F`/`0x40` (63/64) **default flood scope** set/get, and `0x36` (54) flood scope key:
+  the repeater's `region default` / `region home`.
+- `0x3C` (60) **allowed repeat frequencies** (read): which radio frequencies may use the
+  "repeat" option of `SET_RADIO_PARAMS`.
+- `0x3E` (62) send non-text **data on a channel**, `0x41` (65) send a **raw packet**,
+  `0x39` (57) **anonymous request**, `0x32` (50) **binary request**, `0x34` (52) path
+  discovery, `0x37` (55) control data (neighbour discovery, see above).
+- `0x33` (51) factory reset, `0x13` (19) reboot (needs the text `reboot`); `-cmd=reboot`
+  already covers the second.
+- Differences seen: `meshcore_py` sends the TX power as a 4-byte integer where the firmware
+  reads one signed byte; `SET_TUNING_PARAMS` has two extra zero bytes there (`mc` sends 9
+  bytes and the T1000-E accepts it). Not used by `mc`: TX power goes through `-cmd "set tx"`.
 
 ## Still to test on hardware
 
