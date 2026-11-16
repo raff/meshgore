@@ -1,0 +1,29 @@
+# Binaries
+/mc
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and coverage
+*.test
+*.out
+coverage.*
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directory (use modules)
+vendor/
+
+# Local data written by mc
+*.csv
+.env
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
