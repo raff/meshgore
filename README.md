@@ -84,6 +84,7 @@ mc MyNode>
   repeater, so there is no `repeater MyRepeater` to type. It takes `-password` (or `MC_PASSWORD`;
   `-password=` means none) and `-timeout`, and a failed login ends the session with an error.
   `exit` leaves the repeater and returns to the companion prompt; a second `exit` ends the session.
+- `verbose` shows, `verbose on` and `verbose off` change the logging of every raw frame (the `-v` option).
 - `safe` shows the read-only check for CLI commands, `safe off` and `safe on` change it; the
   prompt says `(unsafe)` while it is off.
 - On a repeater console (`-serial=<port> -console`) the session works the same way, without
@@ -310,6 +311,12 @@ Replies from `get` start with `> `.
   replace its oldest contact. Adverts that are not saved still show up as "new advert" pushes.
 - `path-hash` sets how many bytes of each hop's hash flood packets carry (mode + 1).
   The current mode is in `info`.
+- `path CONTACT` sends a flood request to the contact and prints the repeaters it went through
+  on the way out and the ones the reply came back through, named from the contact cache (a hash
+  that matches several repeaters shows all of them). A repeater or room server answers only a
+  node that has logged in, so give `-password P` (or `MC_PASSWORD`; a guest password is enough).
+  An empty guest password is `-password=` (an empty `MC_PASSWORD` works too); with neither, no login is sent.
+  Reaching it at all, with a path printed, is also a check that the repeater is up and in range.
 - `discover` sends a one-hop request and lists the nodes that answer, with the SNR each
   heard the other at. Names come from the contact cache. Repeaters answer at most 4 times in
   2 minutes, so repeat it sparingly.
@@ -543,7 +550,7 @@ Options come before the command.
 | `clock`, `radio`, `tuning`, `gps`, `advert`, `set`, `auto-add`, `path-hash`, `scope` | read or change its settings |
 | `messages`, `dm`, `send`, `healthcheck` | messages |
 | `contacts`, `contact`, `channels`, `channel` | contacts and channels |
-| `discover`, `repeater`, `cli` | the network, a repeater, a CLI command on the node |
+| `discover`, `path`, `repeater`, `cli` | the network, the route to a contact, a repeater, a CLI command on the node |
 | `scan`, `ports`, `help`, `repl` | find nodes, list serial ports, help, an interactive session |
 
 `mc help` has the arguments of each; `mc help <command>` its options.

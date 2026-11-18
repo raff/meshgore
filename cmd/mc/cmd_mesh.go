@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -29,6 +31,7 @@ func init() {
 		&command{"channels", "Contacts and channels", "", "list the channels", cmdChannels},
 		&command{"channel", "Contacts and channels", "add NAME [-secret HEX|random] [-slot N] [-overwrite] | remove NAME|SLOT [-overwrite]", "add or empty a channel", cmdChannel},
 		&command{"discover", "Network", "[-wait DURATION] [all|chat,repeater,room,sensor]", "ask nodes in direct radio range to identify themselves", cmdDiscover},
+		&command{"path", "Network", "CONTACT", "find the route (the repeaters) to a contact and back", cmdPath},
 		&command{"repeater", "Network", "[-password P] [-c CMD]... NAME [status] [telemetry] [watch INTERVAL] [cmd TEXT...]", "log in to a repeater through the companion and run things on it", cmdRepeater},
 		&command{"cli", "Network", "[-c CMD]... [TEXT...]", "run a CLI command on the node itself (the companion, or the repeater console)", cmdCLI},
 		&command{"scan", "Connection", "", "list the companions in Bluetooth range", cmdScan},
@@ -503,5 +506,95 @@ func cmdPorts(s *session, args []string) int {
 	for _, p := range ports {
 		fmt.Println(p)
 	}
+	return exitOK
+}
+
+// hopNames names the repeaters whose key starts with a hop's hash, from the contact
+// cache. Several matches are all shown; none gives the hash alone.
+func hopNames(cached []*meshgore.Contact, hop []byte) string {
+	var names []string
+	for _, ct := range cached {
+		if ct.Type == 2 && bytes.HasPrefix(ct.PublicKey[:], hop) {
+			names = append(names, ct.Name)
+		}
+	}
+	if len(names) == 0 {
+		return fmt.Sprintf("%x (unknown)", hop)
+	}
+	return fmt.Sprintf("%x %s", hop, strings.Join(names, " | "))
+}
+
+func printPath(label string, cached []*meshgore.Contact, hops [][]byte) {
+	if len(hops) == 0 {
+		fmt.Printf("%s: direct, no repeater\n", label)
+		return
+	}
+	fmt.Printf("%s: %d hop(s)\n", label, len(hops))
+	for i, h := range hops {
+		fmt.Printf("  %d. %s\n", i+1, hopNames(cached, h))
+	}
+}
+
+func cmdPath(s *session, args []string) int {
+	fs := newFlags("path", "[-password P] CONTACT")
+	password := fs.String("password", "", "log in to the repeater first (admin or guest password; -password= is an empty one; or set MC_PASSWORD)")
+	rest, code, ok := parseFlags(fs, args)
+	if !ok {
+		return code
+	}
+	if len(rest) != 1 {
+		return usageError(fs, "wants one contact")
+	}
+	l := s.companion()
+	if l == nil {
+		return exitFail
+	}
+	ct, err := resolveContact(l.Client, s.node(), rest[0])
+	if err != nil {
+		fmt.Println("error:", err)
+		return exitFail
+	}
+	fmt.Printf("Path to: %s (%s, key %x)\n", ct.Name, ct.TypeName(), ct.PublicKey[:6])
+	// An empty password is a login too (a guest password may be empty), so what counts is
+	// that the flag or the variable was given, not that it has text.
+	login := false
+	fs.Visit(func(f *flag.Flag) { login = login || f.Name == "password" })
+	if !login {
+		if v, ok := os.LookupEnv("MC_PASSWORD"); ok {
+			*password, login = v, true
+		}
+	}
+	if login {
+		if err := l.Client.Login(ct.PublicKey, *password); err != nil {
+			fmt.Println("error:", err)
+			return exitFail
+		}
+		fmt.Println("Logged in")
+		defer l.Client.Logout(ct.PublicKey)
+	}
+	p, err := l.Client.DiscoverPath(ct.PublicKey)
+	if err != nil {
+		fmt.Println("error:", err)
+		if !login && ct.Type != 1 {
+			fmt.Println("A repeater or room server answers only a node that has logged in: try -password.")
+		}
+		return exitFail
+	}
+	cached, _ := loadContactCache(s.node())
+	if s.g.json {
+		hex := func(hops [][]byte) []string {
+			out := []string{}
+			for _, h := range hops {
+				out = append(out, fmt.Sprintf("%x", h))
+			}
+			return out
+		}
+		enc := json.NewEncoder(s.out)
+		enc.SetIndent("", "  ")
+		enc.Encode(map[string]any{"to": ct.Name, "key": fmt.Sprintf("%x", ct.PublicKey[:]), "out": hex(p.Out), "in": hex(p.In)})
+		return exitOK
+	}
+	printPath("Out", cached, p.Out)
+	printPath("Back", cached, p.In)
 	return exitOK
 }

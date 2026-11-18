@@ -18,7 +18,7 @@ An item counts as done only after a run against a real node.
    - `0x3C` (60) allowed repeat frequencies (read): which frequencies may use the "repeat"
      option of `SET_RADIO_PARAMS`.
    - `0x3E` (62) data on a channel, `0x41` (65) a raw packet, `0x39` (57) an anonymous request,
-     `0x32` (50) a binary request, `0x34` (52) path discovery.
+     `0x32` (50) a binary request.
    - `0x33` (51) factory reset, payload the text `reset`: left out on purpose, since it formats
      the node.
 3. **Wi-Fi (TCP) companion**, not wanted for now. Builds with `ENABLE_WIFI_INTERFACE` serve the
@@ -212,6 +212,10 @@ Measured with the repeater indoors, then outside (not very high):
 
 - Bluetooth scan (by service UUID or prefix, with a timeout), pairing retry, reconnect with backoff
 - Handshake, node and device info, channels, contacts with an incremental on-disk cache, messages
+- `path CONTACT`: path discovery (`0x34`, answer `0x8D`), with `-password` to log in first (an empty
+  `-password=` is a guest login). Run against a real repeater: 4 hops out and 4 back, found on the third
+  flood. A login sent by a stale stored route fails, so `Login` resets the path before each retry
+  (`verbose on|off` in the REPL turns frame logging on)
 - `scope`: the default flood scope (a region name and its key, SHA-256 of `#`+name)
 - Direct messages with acknowledgement, retry and path reset; `send` (refuses over 133 bytes);
   `healthcheck`; the contact

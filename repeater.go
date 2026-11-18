@@ -55,6 +55,13 @@ func (c *Client) Login(key [32]byte, password string) error {
 	sub := c.Subscribe(pushLoginSuccess, pushLoginFailed)
 	defer sub.Close()
 	for attempt := 1; attempt <= loginAttempts; attempt++ {
+		if attempt > 1 {
+			// The first try goes by the stored route, which may be stale; forget it so
+			// the retries flood, as a message retry does.
+			if err := c.ResetPath(key); err != nil {
+				logf("%v; continuing", err)
+			}
+		}
 		suggested, err := c.sendAccepted(cmd)
 		if err != nil {
 			return fmt.Errorf("SEND_LOGIN: %w", err)
@@ -62,6 +69,9 @@ func (c *Client) Login(key [32]byte, password string) error {
 		wait := suggested * 4 // the device's hint is in ms; leave generous slack
 		if wait < 8*time.Second {
 			wait = 8 * time.Second
+		}
+		if wait > 30*time.Second {
+			wait = 30 * time.Second // a long hint comes from a long stored route, the thing that failed
 		}
 		ok, err := c.awaitLogin(sub, key, wait)
 		if err != nil {

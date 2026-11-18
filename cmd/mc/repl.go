@@ -279,6 +279,9 @@ func (r *repl) exec(text string) (quit bool) {
 	case "safe":
 		r.safe(args[1:])
 		return false
+	case "verbose":
+		r.verbose(args[1:])
+		return false
 	case "repl":
 		fmt.Println("already in a session")
 		return false
@@ -323,6 +326,21 @@ func (r *repl) safe(args []string) {
 		return
 	}
 	fmt.Printf("safe mode is %s\n", map[bool]string{true: "on: only read-only CLI commands run", false: "off: any CLI command runs"}[r.s.g.safe])
+}
+
+// verbose shows or sets the logging of every raw protocol frame (the -v option).
+func (r *repl) verbose(args []string) {
+	switch {
+	case len(args) == 0:
+	case len(args) == 1 && args[0] == "on":
+		meshgore.Debug = true
+	case len(args) == 1 && args[0] == "off":
+		meshgore.Debug = false
+	default:
+		fmt.Println("usage: verbose [on|off]")
+		return
+	}
+	fmt.Printf("verbose is %s\n", map[bool]string{true: "on: every raw frame is logged", false: "off"}[meshgore.Debug])
 }
 
 // enterRepeater handles "repeater NAME" typed with nothing after the name: it logs in
@@ -390,6 +408,9 @@ func (r *repl) execRepeater(args []string, text string) bool {
 		return false
 	case "safe":
 		r.safe(args[1:])
+		return false
+	case "verbose":
+		r.verbose(args[1:])
 		return false
 	case "status":
 		st, err := client.RequestStatus(rep.ct.PublicKey)
@@ -459,6 +480,7 @@ var subWords = map[string][]string{
 	"auto-add": {"show", "all", "none", "chat", "repeater", "room", "sensor"},
 	"discover": {"all", "chat", "repeater", "room", "sensor"},
 	"safe":     {"on", "off"},
+	"verbose":  {"on", "off"},
 	"help":     nil, // filled with the command names below
 }
 
@@ -500,7 +522,7 @@ func completeLine(line, node string) []string {
 		for _, c := range commands {
 			cands = append(cands, c.name)
 		}
-		cands = append(cands, "exit", "safe")
+		cands = append(cands, "exit", "safe", "verbose")
 	case index != 1:
 		// only the first word after the command has a fixed set of choices
 	case cmd == "help":
