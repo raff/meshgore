@@ -136,10 +136,13 @@ type Link struct {
 	Self   *SelfInfo // the node's own details, from the first handshake
 }
 
+// DialAttempts is how many times Dial tries to connect before giving up.
+var DialAttempts = 10
+
 // Dial connects to the companion at addr and runs the handshake (APP_START and
 // DEVICE_QUERY; the result is in Self and Client.Info). The first attempt may
 // trigger OS pairing, after which the connection can go stale; reconnecting
-// once the bond exists works, so it tries up to 3 times.
+// once the bond exists works, so it tries up to DialAttempts times.
 func Dial(addr bluetooth.Address) (*Link, error) {
 	l := &Link{Addr: addr, hub: newPushHub()}
 	for attempt := 1; ; attempt++ {
@@ -149,7 +152,7 @@ func Dial(addr bluetooth.Address) (*Link, error) {
 			return l, nil
 		}
 		logf("attempt %d failed: %v", attempt, err)
-		if attempt == 3 {
+		if attempt >= DialAttempts {
 			return nil, errors.New("giving up")
 		}
 		logf("Reconnecting...")

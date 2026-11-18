@@ -36,6 +36,7 @@ func main() {
 	flag.BoolVar(&g.verbose, "v", false, "log every raw protocol frame")
 	flag.DurationVar(&g.reconnectWait, "reconnect-wait", 2*time.Minute, "after a reboot, how long to wait for the node to come back (0 = don't)")
 	flag.DurationVar(&g.cmdTimeout, "cmd-timeout", 30*time.Second, "how long to wait for each CLI command's reply")
+	flag.IntVar(&meshgore.DialAttempts, "retries", meshgore.DialAttempts, "how many times to try the Bluetooth connection before giving up")
 	flag.Usage = usage
 	flag.Parse()
 
