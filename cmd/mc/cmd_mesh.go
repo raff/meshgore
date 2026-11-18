@@ -538,7 +538,7 @@ func printPath(label string, cached []*meshgore.Contact, hops [][]byte) {
 func cmdPath(s *session, args []string) int {
 	fs := newFlags("path", "[-password P] [-attempts N] CONTACT")
 	attempts := fs.Int("attempts", 8, "how many times to send the login and the request (each a flood that may be lost)")
-	password := fs.String("password", "", "log in to the repeater first (admin or guest password; -password= is an empty one; or set MC_PASSWORD)")
+	password := fs.String("password", "", "the admin or guest password for the repeater or room server (default: empty; or set MC_PASSWORD)")
 	rest, code, ok := parseFlags(fs, args)
 	if !ok {
 		return code
@@ -568,6 +568,11 @@ func cmdPath(s *session, args []string) int {
 			*password, login = v, true
 		}
 	}
+	if !login && ct.Type != 1 {
+		// A repeater or room server answers only a logged-in node: try the empty (guest)
+		// password, as "repeater" does.
+		login = true
+	}
 	if login {
 		if err := l.Client.LoginWithAttempts(ct.PublicKey, *password, *attempts, true); err != nil {
 			fmt.Println("error:", err)
@@ -579,9 +584,6 @@ func cmdPath(s *session, args []string) int {
 	p, err := l.Client.DiscoverPath(ct.PublicKey, *attempts)
 	if err != nil {
 		fmt.Println("error:", err)
-		if !login && ct.Type != 1 {
-			fmt.Println("A repeater or room server answers only a node that has logged in: try -password.")
-		}
 		return exitFail
 	}
 	cached, _ := loadContactCache(s.node())

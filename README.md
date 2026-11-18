@@ -314,11 +314,12 @@ Replies from `get` start with `> `.
 - `path CONTACT` sends a flood request to the contact and prints the repeaters it went through
   on the way out and the ones the reply came back through, named from the contact cache (a hash
   that matches several repeaters shows all of them). A repeater or room server answers only a
-  node that has logged in, so give `-password P` (or `MC_PASSWORD`; a guest password is enough).
+  node that has logged in, so `path` logs in first, with `-password P` (or `MC_PASSWORD`; a guest
+  password is enough) or, if neither is given, with an empty password.
   Each of the login and the request is sent up to `-attempts N` times (default 8) as a flood, since
   over several hops a flood is often lost; the login forgets the stored route first so it never goes
   by a stale one.
-  An empty guest password is `-password=` (an empty `MC_PASSWORD` works too); with neither, no login is sent.
+  A chat contact gets no login unless `-password` is given.
   Reaching it at all, with a path printed, is also a check that the repeater is up and in range.
 - `discover` sends a one-hop request and lists the nodes that answer, with the SNR each
   heard the other at. Names come from the contact cache. Repeaters answer at most 4 times in
