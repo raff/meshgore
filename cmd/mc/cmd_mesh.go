@@ -537,7 +537,7 @@ func printPath(label string, cached []*meshgore.Contact, hops [][]byte) {
 
 func cmdPath(s *session, args []string) int {
 	fs := newFlags("path", "[-password P] [-attempts N] CONTACT")
-	attempts := fs.Int("attempts", 5, "how many times to send the login and the request (each a flood that may be lost)")
+	attempts := fs.Int("attempts", 8, "how many times to send the login and the request (each a flood that may be lost)")
 	password := fs.String("password", "", "log in to the repeater first (admin or guest password; -password= is an empty one; or set MC_PASSWORD)")
 	rest, code, ok := parseFlags(fs, args)
 	if !ok {
