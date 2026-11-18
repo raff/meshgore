@@ -1,7 +1,17 @@
-# mc
+# meshgore
 
-A command-line client for [MeshCore](https://meshcore.io) that talks to a
-**companion** node over Bluetooth LE. Besides reading your own node it can
+A Go library for talking to [MeshCore](https://meshcore.io) nodes, and `mc`, a
+command-line tool built on it.
+
+- **Library** (`github.com/raff/meshgore`): connect to a companion node over
+  Bluetooth LE or USB serial, then read its info, channels, contacts and messages,
+  send messages, and log in to and administer repeaters and room servers through
+  it. See [Using the library](#using-the-library).
+- **Tool** (`mc`, in `cmd/mc`): a command-line client and interactive session
+  for the same things, with JSON output and exit codes for use from cron. The rest
+  of this README describes `mc`.
+
+`mc` talks to a **companion** node over Bluetooth LE. Besides reading your own node it can
 administer a **remote repeater** through that companion, which is the way in
 when the repeater has Bluetooth turned off.
 
