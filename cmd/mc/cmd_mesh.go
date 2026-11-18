@@ -536,7 +536,8 @@ func printPath(label string, cached []*meshgore.Contact, hops [][]byte) {
 }
 
 func cmdPath(s *session, args []string) int {
-	fs := newFlags("path", "[-password P] CONTACT")
+	fs := newFlags("path", "[-password P] [-attempts N] CONTACT")
+	attempts := fs.Int("attempts", 5, "how many times to send the login and the request (each a flood that may be lost)")
 	password := fs.String("password", "", "log in to the repeater first (admin or guest password; -password= is an empty one; or set MC_PASSWORD)")
 	rest, code, ok := parseFlags(fs, args)
 	if !ok {
@@ -544,6 +545,9 @@ func cmdPath(s *session, args []string) int {
 	}
 	if len(rest) != 1 {
 		return usageError(fs, "wants one contact")
+	}
+	if *attempts < 1 {
+		return usageError(fs, "-attempts wants a number of at least 1")
 	}
 	l := s.companion()
 	if l == nil {
@@ -565,14 +569,14 @@ func cmdPath(s *session, args []string) int {
 		}
 	}
 	if login {
-		if err := l.Client.Login(ct.PublicKey, *password); err != nil {
+		if err := l.Client.LoginWithAttempts(ct.PublicKey, *password, *attempts, true); err != nil {
 			fmt.Println("error:", err)
 			return exitFail
 		}
 		fmt.Println("Logged in")
 		defer l.Client.Logout(ct.PublicKey)
 	}
-	p, err := l.Client.DiscoverPath(ct.PublicKey)
+	p, err := l.Client.DiscoverPath(ct.PublicKey, *attempts)
 	if err != nil {
 		fmt.Println("error:", err)
 		if !login && ct.Type != 1 {

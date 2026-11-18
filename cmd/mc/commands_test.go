@@ -66,7 +66,7 @@ func TestUsageErrorsNeedNoConnection(t *testing.T) {
 	s := newSession(context.Background(), globalOpts{safe: true}, io.Discard)
 	for _, line := range []string{
 		"advert bogus", "watch", "watch soon", "watch 0s", "set", "set name", "set colour red",
-		"dm", "dm Bob", "send", "send #x", "healthcheck", "healthcheck a b", "path", "path a b", "contact", "contact add X",
+		"dm", "dm Bob", "send", "send #x", "healthcheck", "healthcheck a b", "path", "path a b", "path -attempts 0 x", "contact", "contact add X",
 		"channel", "channel bogus x", "channel add", "channel add a b", "radio set", "radio fm",
 		"clock later", "gps maybe", "path-hash x", "repeater", "repeater -nope", "cli", "nosuchcommand",
 	} {

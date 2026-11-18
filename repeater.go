@@ -50,14 +50,21 @@ const loginAttempts = 3
 // full public key, and waits for the result, which arrives over the radio as a
 // push frame some time after the node accepts the request.
 func (c *Client) Login(key [32]byte, password string) error {
+	return c.LoginWithAttempts(key, password, loginAttempts, false)
+}
+
+// LoginWithAttempts is Login with a chosen number of tries. The first try goes by the
+// stored route to the repeater, which may be stale; with floodFirst that route is forgotten
+// before it too, so every try floods. The retries always do.
+func (c *Client) LoginWithAttempts(key [32]byte, password string, attempts int, floodFirst bool) error {
 	cmd := append([]byte{cmdSendLogin}, key[:]...)
 	cmd = append(cmd, password...)
 	sub := c.Subscribe(pushLoginSuccess, pushLoginFailed)
 	defer sub.Close()
-	for attempt := 1; attempt <= loginAttempts; attempt++ {
-		if attempt > 1 {
-			// The first try goes by the stored route, which may be stale; forget it so
-			// the retries flood, as a message retry does.
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 || floodFirst {
+			// A stale stored route never delivers; forget it so this try floods, as a
+			// message retry does.
 			if err := c.ResetPath(key); err != nil {
 				logf("%v; continuing", err)
 			}
@@ -80,8 +87,8 @@ func (c *Client) Login(key [32]byte, password string) error {
 		if ok {
 			return nil
 		}
-		if attempt < loginAttempts {
-			logf("no login reply after %s, retrying (%d/%d)...", wait.Round(time.Second), attempt+1, loginAttempts)
+		if attempt < attempts {
+			logf("no login reply after %s, retrying (%d/%d)...", wait.Round(time.Second), attempt+1, attempts)
 		}
 	}
 	return errors.New("no login reply: wrong password (repeaters stay silent on a bad one) or repeater out of range")

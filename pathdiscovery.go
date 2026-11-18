@@ -66,12 +66,12 @@ func parsePathDiscovery(f []byte) (*PathDiscovery, error) {
 
 // DiscoverPath finds the route to a contact (full public key). The request is a
 // flood, so it is retried like login and telemetry, and the contact must answer
-// a telemetry request. Only one such request can be pending on the node.
-func (c *Client) DiscoverPath(key [32]byte) (*PathDiscovery, error) {
+// a telemetry request. attempts is how many times the request is sent. Only one such request can be pending on the node.
+func (c *Client) DiscoverPath(key [32]byte, attempts int) (*PathDiscovery, error) {
 	cmd := append([]byte{cmdPathDiscovery, 0}, key[:]...)
 	sub := c.Subscribe(pushPathDiscovery)
 	defer sub.Close()
-	for attempt := 1; attempt <= loginAttempts; attempt++ {
+	for attempt := 1; attempt <= attempts; attempt++ {
 		suggested, err := c.sendAccepted(cmd)
 		if err != nil {
 			return nil, fmt.Errorf("SEND_PATH_DISCOVERY_REQ: %w", err)
@@ -93,8 +93,8 @@ func (c *Client) DiscoverPath(key [32]byte) (*PathDiscovery, error) {
 				break recv
 			}
 		}
-		if attempt < loginAttempts {
-			logf("no path reply after %s, retrying (%d/%d)...", wait.Round(time.Second), attempt+1, loginAttempts)
+		if attempt < attempts {
+			logf("no path reply after %s, retrying (%d/%d)...", wait.Round(time.Second), attempt+1, attempts)
 		}
 	}
 	return nil, errors.New("no path discovery reply")
