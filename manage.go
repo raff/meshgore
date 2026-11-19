@@ -1,6 +1,7 @@
 package meshgore
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -172,7 +173,7 @@ func parseDiscoverResponse(f []byte, tag uint32) (*Neighbor, bool) {
 // collects the answers for wait. types is a mask of AutoAdd* type bits (for
 // example AutoAddRepeater). The request goes one hop only, and a repeater answers
 // at most 4 times in 2 minutes.
-func (c *Client) Discover(types byte, wait time.Duration) ([]*Neighbor, error) {
+func (c *Client) Discover(ctx context.Context, types byte, wait time.Duration) ([]*Neighbor, error) {
 	if types == 0 {
 		return nil, errors.New("DISCOVER: no node type selected")
 	}
@@ -198,6 +199,8 @@ func (c *Client) Discover(types byte, wait time.Duration) ([]*Neighbor, error) {
 			}
 		case <-deadline:
 			return out, nil
+		case <-ctx.Done():
+			return out, ctx.Err()
 		}
 	}
 }

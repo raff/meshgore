@@ -486,7 +486,7 @@ func cmdScan(s *session, args []string) int {
 		fmt.Println("error: failed to enable the Bluetooth adapter:", err)
 		return exitFail
 	}
-	if _, err := meshgore.Scan(""); err != nil && err != meshgore.ErrScanOnly {
+	if _, err := meshgore.Scan(s.ctx, ""); err != nil && err != meshgore.ErrScanOnly {
 		fmt.Println("error:", err)
 		return exitFail
 	}
@@ -574,14 +574,14 @@ func cmdPath(s *session, args []string) int {
 		login = true
 	}
 	if login {
-		if err := l.Client.LoginWithAttempts(ct.PublicKey, *password, *attempts, true); err != nil {
+		if err := l.Client.LoginWithAttempts(s.ctx, ct.PublicKey, *password, *attempts, true); err != nil {
 			fmt.Println("error:", err)
 			return exitFail
 		}
 		fmt.Println("Logged in")
 		defer l.Client.Logout(ct.PublicKey)
 	}
-	p, err := l.Client.DiscoverPath(ct.PublicKey, *attempts)
+	p, err := l.Client.DiscoverPath(s.ctx, ct.PublicKey, *attempts)
 	if err != nil {
 		fmt.Println("error:", err)
 		return exitFail

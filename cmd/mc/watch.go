@@ -110,7 +110,7 @@ func watchRepeater(ctx context.Context, l *meshgore.Link, ct *meshgore.Contact, 
 			loggedIn = false
 		}
 		if !loggedIn {
-			if err := l.Client.Login(ct.PublicKey, o.password); err != nil {
+			if err := l.Client.Login(ctx, ct.PublicKey, o.password); err != nil {
 				rec.Error = err.Error()
 			} else {
 				loggedIn = true

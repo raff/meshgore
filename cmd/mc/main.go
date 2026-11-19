@@ -27,7 +27,7 @@ Options choose the node and how to behave:
 
 func main() {
 	var g globalOpts
-	flag.StringVar(&g.name, "name", "", "the companion's Bluetooth name: what follows the first '-' (MeshCore-MyNode is MyNode), or the full name")
+	flag.StringVar(&g.name, "name", os.Getenv("MC_NAME"), "the companion's Bluetooth name: what follows the first '-' (MeshCore-MyNode is MyNode), or the full name (or MC_NAME)")
 	flag.StringVar(&g.serial, "serial", "", "connect over USB serial instead: the port, e.g. /dev/cu.usbmodem14301 (see \"mc ports\")")
 	flag.IntVar(&g.baud, "baud", meshgore.DefaultBaud, "with -serial: baud rate (a native USB port ignores it)")
 	flag.BoolVar(&g.console, "console", false, "with -serial: the port is a repeater or room server's text console, not a companion")

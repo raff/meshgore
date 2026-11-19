@@ -23,7 +23,7 @@ func withCompanion(s *session, a nodeActions) int {
 		return exitFail
 	}
 	a.node = s.node()
-	return runNodeActions(l, a)
+	return runNodeActions(s.ctx, l, a)
 }
 
 func thresholdFlags(fs *flag.FlagSet, t *thresholds) {

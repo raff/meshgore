@@ -77,8 +77,8 @@ func (s *session) connectCompanion() (*meshgore.Link, error) {
 			return nil, fmt.Errorf("failed to enable the Bluetooth adapter: %w", s.bleErr)
 		}
 		var addr bluetooth.Address
-		if addr, err = meshgore.FindCompanion(s.g.name); err == nil {
-			l, err = meshgore.Dial(addr)
+		if addr, err = meshgore.FindCompanion(s.ctx, s.g.name); err == nil {
+			l, err = meshgore.Dial(s.ctx, addr)
 		}
 	default:
 		return nil, errors.New("no node chosen: use -name <bluetooth name> or -serial <port> (see \"mc scan\" and \"mc ports\")")

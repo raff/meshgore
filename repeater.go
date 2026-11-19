@@ -1,6 +1,7 @@
 package meshgore
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -49,19 +50,22 @@ const loginAttempts = 3
 // Login authenticates to a remote repeater or room server identified by its
 // full public key, and waits for the result, which arrives over the radio as a
 // push frame some time after the node accepts the request.
-func (c *Client) Login(key [32]byte, password string) error {
-	return c.LoginWithAttempts(key, password, loginAttempts, false)
+func (c *Client) Login(ctx context.Context, key [32]byte, password string) error {
+	return c.LoginWithAttempts(ctx, key, password, loginAttempts, false)
 }
 
 // LoginWithAttempts is Login with a chosen number of tries. The first try goes by the
 // stored route to the repeater, which may be stale; with floodFirst that route is forgotten
 // before it too, so every try floods. The retries always do.
-func (c *Client) LoginWithAttempts(key [32]byte, password string, attempts int, floodFirst bool) error {
+func (c *Client) LoginWithAttempts(ctx context.Context, key [32]byte, password string, attempts int, floodFirst bool) error {
 	cmd := append([]byte{cmdSendLogin}, key[:]...)
 	cmd = append(cmd, password...)
 	sub := c.Subscribe(pushLoginSuccess, pushLoginFailed)
 	defer sub.Close()
 	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if attempt > 1 || floodFirst {
 			// A stale stored route never delivers; forget it so this try floods, as a
 			// message retry does.
@@ -80,7 +84,7 @@ func (c *Client) LoginWithAttempts(key [32]byte, password string, attempts int, 
 		if wait > 30*time.Second {
 			wait = 30 * time.Second // a long hint comes from a long stored route, the thing that failed
 		}
-		ok, err := c.awaitLogin(sub, key, wait)
+		ok, err := c.awaitLogin(ctx, sub, key, wait)
 		if err != nil {
 			return err
 		}
@@ -96,7 +100,7 @@ func (c *Client) LoginWithAttempts(key [32]byte, password string, attempts int, 
 
 // awaitLogin waits for the login result push from key. It returns false on
 // timeout, and an error if the repeater rejected the login.
-func (c *Client) awaitLogin(sub *Sub, key [32]byte, wait time.Duration) (bool, error) {
+func (c *Client) awaitLogin(ctx context.Context, sub *Sub, key [32]byte, wait time.Duration) (bool, error) {
 	deadline := time.After(wait)
 	for {
 		select {
@@ -114,6 +118,8 @@ func (c *Client) awaitLogin(sub *Sub, key [32]byte, wait time.Duration) (bool, e
 			return true, nil
 		case <-deadline:
 			return false, nil
+		case <-ctx.Done():
+			return false, ctx.Err()
 		}
 	}
 }

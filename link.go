@@ -68,7 +68,7 @@ var ErrScanOnly = errors.New("no name given; the companions seen were logged")
 // found. Devices are recognised by the service UUID they advertise, or by the
 // "MeshCore-" name prefix. With an empty name it lists the nodes it sees through
 // Logf for 10 seconds and then returns an error.
-func Scan(name string) (bluetooth.ScanResult, error) {
+func Scan(ctx context.Context, name string) (bluetooth.ScanResult, error) {
 	var target bluetooth.ScanResult
 	found := false
 	listed := map[string]bool{}
@@ -85,6 +85,16 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 	}
 	stop := time.AfterFunc(limit, func() { _ = adapter.StopScan() })
 	defer stop.Stop()
+	// Ctrl-C (a cancelled ctx) ends the scan too.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = adapter.StopScan()
+		case <-done:
+		}
+	}()
 	unnamed := map[string]int16{} // companions seen so far without a name, with their signal
 	err := adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
 		dname := result.LocalName()
@@ -115,6 +125,9 @@ func Scan(name string) (bluetooth.ScanResult, error) {
 	if err != nil {
 		return target, fmt.Errorf("scan error: %w", err)
 	}
+	if err := ctx.Err(); err != nil && !found {
+		return target, err
+	}
 	if !found {
 		if name == "" {
 			return target, ErrScanOnly
@@ -143,9 +156,12 @@ var DialAttempts = 10
 // DEVICE_QUERY; the result is in Self and Client.Info). The first attempt may
 // trigger OS pairing, after which the connection can go stale; reconnecting
 // once the bond exists works, so it tries up to DialAttempts times.
-func Dial(addr bluetooth.Address) (*Link, error) {
+func Dial(ctx context.Context, addr bluetooth.Address) (*Link, error) {
 	l := &Link{Addr: addr, hub: newPushHub()}
 	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		device, client, self, err := connectAndHandshake(addr, l.hub)
 		if err == nil {
 			l.Device, l.Client, l.Self = device, client, self
@@ -156,7 +172,11 @@ func Dial(addr bluetooth.Address) (*Link, error) {
 			return nil, errors.New("giving up")
 		}
 		logf("Reconnecting...")
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 
@@ -300,7 +320,7 @@ func connectAndHandshake(addr bluetooth.Address, hub *pushHub) (device bluetooth
 }
 
 // FindCompanion scans for the companion called name and returns its address.
-func FindCompanion(name string) (bluetooth.Address, error) {
-	r, err := Scan(name)
+func FindCompanion(ctx context.Context, name string) (bluetooth.Address, error) {
+	r, err := Scan(ctx, name)
 	return r.Address, err
 }

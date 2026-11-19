@@ -88,7 +88,7 @@ func runRepeater(ctx context.Context, l *meshgore.Link, o repeaterOpts) int {
 	res.Repeater, res.Key = ct.Name, hex.EncodeToString(ct.PublicKey[:])
 	fmt.Printf("Repeater: %s (%s, key %x)\n", ct.Name, ct.TypeName(), ct.PublicKey[:6])
 
-	if err := client.Login(ct.PublicKey, o.password); err != nil {
+	if err := client.Login(ctx, ct.PublicKey, o.password); err != nil {
 		return fail(err)
 	}
 	fmt.Println("Logged in")

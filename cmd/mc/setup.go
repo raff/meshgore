@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -111,7 +112,7 @@ func firstEmptySlot(used []*meshgore.Channel, max int) (int, bool) {
 // runNodeActions applies a to the companion and returns the process exit code.
 // Everything is checked before the first change, so a typo in a later flag does
 // not leave the node half configured.
-func runNodeActions(l *meshgore.Link, a nodeActions) int {
+func runNodeActions(ctx context.Context, l *meshgore.Link, a nodeActions) int {
 	fail := func(err error) int { fmt.Println("error:", err); return exitFail }
 
 	var lat, lon float64
@@ -284,7 +285,7 @@ func runNodeActions(l *meshgore.Link, a nodeActions) int {
 		fmt.Printf("Advert (%s) sent\n", a.advert)
 	}
 	if a.discover != "" {
-		if code := runDiscover(c, a, discoverTypes); code != exitOK {
+		if code := runDiscover(ctx, c, a, discoverTypes); code != exitOK {
 			return code
 		}
 	}
@@ -547,13 +548,13 @@ func removeChannel(c *meshgore.Client, a nodeActions) int {
 }
 
 // runDiscover asks nearby nodes to identify themselves and prints the answers.
-func runDiscover(c *meshgore.Client, a nodeActions, types byte) int {
+func runDiscover(ctx context.Context, c *meshgore.Client, a nodeActions, types byte) int {
 	wait := a.discoverWait
 	if wait <= 0 {
 		wait = 8 * time.Second
 	}
 	fmt.Printf("Discovering %s within radio range (%s)...\n", a.discover, wait)
-	ns, err := c.Discover(types, wait)
+	ns, err := c.Discover(ctx, types, wait)
 	if err != nil {
 		fmt.Println("error:", err)
 		return exitFail

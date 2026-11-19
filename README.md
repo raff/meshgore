@@ -91,7 +91,8 @@ mc MyNode>
   none). Inside it, `status` and `telemetry` read the repeater, `exit` logs out, and safe mode
   applies. With more after the name (`repeater NAME status`) it is the ordinary command.
 - `mc -name=MyNode repl -repeater MyRepeater` starts the session already logged in to that
-  repeater, so there is no `repeater MyRepeater` to type. It takes `-password` (or `MC_PASSWORD`;
+  repeater, so there is no `repeater MyRepeater` to type (`MC_REPEATER` sets the default for
+  `-repeater`, and `MC_NAME` the one for `-name`). It takes `-password` (or `MC_PASSWORD`;
   `-password=` means none) and `-timeout`, and a failed login ends the session with an error.
   `exit` leaves the repeater and returns to the companion prompt; a second `exit` ends the session.
 - `verbose` shows, `verbose on` and `verbose off` change the logging of every raw frame (the `-v` option).

@@ -48,7 +48,7 @@ type repeaterMode struct {
 
 func cmdREPL(s *session, args []string) int {
 	fs := newFlags("repl", "[-repeater NAME [-password P] [-timeout D]]")
-	repeater := fs.String("repeater", "", "log in to this repeater (through the companion) as soon as the session starts")
+	repeater := fs.String("repeater", os.Getenv("MC_REPEATER"), "log in to this repeater (through the companion) as soon as the session starts (or MC_REPEATER)")
 	password := fs.String("password", "", "the repeater's admin password (or MC_PASSWORD; an empty one is a password too)")
 	timeout := fs.Duration("timeout", s.g.cmdTimeout, "with -repeater: how long to wait for each command's reply")
 	rest, code, ok := parseFlags(fs, args)
@@ -69,8 +69,18 @@ func cmdREPL(s *session, args []string) int {
 		if s.console() == nil {
 			return exitFail
 		}
-	} else if s.companion() == nil {
-		return exitFail
+	} else {
+		// Until the prompt is up Ctrl-C has nothing else to stop: let it end the
+		// scan and the connection attempts.
+		base := s.ctx
+		var stop context.CancelFunc
+		s.ctx, stop = signal.NotifyContext(base, os.Interrupt)
+		l := s.companion()
+		stop()
+		s.ctx = base
+		if l == nil {
+			return exitFail
+		}
 	}
 
 	r := &repl{s: s, base: s.ctx}
@@ -388,7 +398,17 @@ func (r *repl) enterRepeater(args []string) (handled, ok bool) {
 			}
 		}
 	}
-	if err := l.Client.Login(ct.PublicKey, password); err != nil {
+	// Ctrl-C stops the login, as it stops a command.
+	ctx, cancel := context.WithCancel(r.base)
+	r.mu.Lock()
+	r.cancel, r.busy = cancel, true
+	r.mu.Unlock()
+	err = l.Client.Login(ctx, ct.PublicKey, password)
+	cancel()
+	r.mu.Lock()
+	r.cancel, r.busy = nil, false
+	r.mu.Unlock()
+	if err != nil {
 		fmt.Println("error:", err)
 		return true, false
 	}

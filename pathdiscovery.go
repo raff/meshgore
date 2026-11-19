@@ -1,6 +1,7 @@
 package meshgore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -67,11 +68,14 @@ func parsePathDiscovery(f []byte) (*PathDiscovery, error) {
 // DiscoverPath finds the route to a contact (full public key). The request is a
 // flood, so it is retried like login and telemetry, and the contact must answer
 // a telemetry request. attempts is how many times the request is sent. Only one such request can be pending on the node.
-func (c *Client) DiscoverPath(key [32]byte, attempts int) (*PathDiscovery, error) {
+func (c *Client) DiscoverPath(ctx context.Context, key [32]byte, attempts int) (*PathDiscovery, error) {
 	cmd := append([]byte{cmdPathDiscovery, 0}, key[:]...)
 	sub := c.Subscribe(pushPathDiscovery)
 	defer sub.Close()
 	for attempt := 1; attempt <= attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		suggested, err := c.sendAccepted(cmd)
 		if err != nil {
 			return nil, fmt.Errorf("SEND_PATH_DISCOVERY_REQ: %w", err)
@@ -91,6 +95,8 @@ func (c *Client) DiscoverPath(key [32]byte, attempts int) (*PathDiscovery, error
 				return parsePathDiscovery(f)
 			case <-deadline:
 				break recv
+			case <-ctx.Done():
+				return nil, ctx.Err()
 			}
 		}
 		if attempt < attempts {
