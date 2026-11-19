@@ -150,6 +150,11 @@ func syncContacts(client *meshgore.Client, node string, full bool) (all []*meshg
 // 64-char hex key is used as is, then the cache, and only then a (incremental)
 // contact sync.
 func resolveContact(client *meshgore.Client, node, target string) (*meshgore.Contact, error) {
+	if target == "-" { // "-" stands for the repeater in MC_REPEATER
+		if target = os.Getenv("MC_REPEATER"); target == "" {
+			return nil, errors.New(`"-" means the repeater in MC_REPEATER, which is not set`)
+		}
+	}
 	if key, err := hex.DecodeString(target); err == nil && len(key) == 32 {
 		ct := &meshgore.Contact{Name: "(by key)", Type: 2}
 		copy(ct.PublicKey[:], key)

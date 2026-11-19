@@ -375,6 +375,8 @@ func (r *repl) enterRepeater(args []string) (handled, ok bool) {
 				return false, false
 			}
 			timeout = d
+		case a == "-" && name == "":
+			name = a // the repeater in MC_REPEATER
 		case strings.HasPrefix(a, "-"), name != "":
 			return false, false // other options, or actions after the name: the command handles it
 		default:
