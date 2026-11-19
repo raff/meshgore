@@ -18,7 +18,7 @@ func TestWatchCSV(t *testing.T) {
 	}
 	rec := watchRecord{OK: true, Status: s, Alerts: []string{"a", "b"}}
 	for i := 0; i < 2; i++ { // reopening must not repeat the header
-		w, f, err := openCSV(path)
+		w, f, err := openCSV(path, csvHeader)
 		if err != nil {
 			t.Fatal(err)
 		}

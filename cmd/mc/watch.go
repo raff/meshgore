@@ -21,8 +21,13 @@ type watchRecord struct {
 	OK     bool                     `json:"ok"`
 	Error  string                   `json:"error,omitempty"`
 	Status *meshgore.RepeaterStatus `json:"status,omitempty"`
-	Alerts []string                 `json:"alerts,omitempty"`
+	// Telemetry is set when the watch asks for telemetry.
+	Telemetry []meshgore.Reading `json:"telemetry,omitempty"`
+	Alerts    []string           `json:"alerts,omitempty"`
 }
+
+// telemetryCSVHeader is the header of a telemetry-only CSV: one row per reading.
+var telemetryCSVHeader = []string{"time", "channel", "name", "value"}
 
 var csvHeader = []string{"time", "battery_v", "uptime_s", "noise_floor_dbm", "last_rssi_dbm", "last_snr_db",
 	"tx_queue_len", "packets_received", "packets_sent", "receive_errors", "tx_airtime_s", "rx_airtime_s", "alerts"}
@@ -51,7 +56,7 @@ func csvRow(r watchRecord) []string {
 }
 
 // openCSV opens path for appending and writes the header if the file is new.
-func openCSV(path string) (*csv.Writer, *os.File, error) {
+func openCSV(path string, header []string) (*csv.Writer, *os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, nil, err
 	}
@@ -61,7 +66,7 @@ func openCSV(path string) (*csv.Writer, *os.File, error) {
 	}
 	w := csv.NewWriter(f)
 	if info, err := f.Stat(); err == nil && info.Size() == 0 {
-		w.Write(csvHeader)
+		w.Write(header)
 		w.Flush()
 	}
 	return w, f, nil
@@ -73,7 +78,11 @@ func openCSV(path string) (*csv.Writer, *os.File, error) {
 func watchRepeater(ctx context.Context, l *meshgore.Link, ct *meshgore.Contact, o repeaterOpts) int {
 	var csvw *csv.Writer
 	if o.csvPath != "" {
-		w, f, err := openCSV(o.csvPath)
+		header := csvHeader
+		if !o.status {
+			header = telemetryCSVHeader
+		}
+		w, f, err := openCSV(o.csvPath, header)
 		if err != nil {
 			fmt.Println("error:", err)
 			return exitFail
@@ -117,23 +126,39 @@ func watchRepeater(ctx context.Context, l *meshgore.Link, ct *meshgore.Contact, 
 			}
 		}
 		if loggedIn {
-			st, err := l.Client.RequestStatus(ct.PublicKey)
+			var err error
+			if o.status {
+				var st *meshgore.RepeaterStatus
+				if st, err = l.Client.RequestStatus(ct.PublicKey); err == nil {
+					rec.Status = st
+					rec.Alerts = st.Check(o.limits)
+				}
+			}
+			if err == nil && o.telemetry {
+				rec.Telemetry, err = l.Client.RequestTelemetry(ct.PublicKey)
+			}
 			if err != nil {
 				rec.Error = err.Error()
+				rec.Status, rec.Telemetry, rec.Alerts = nil, nil, nil
 				loggedIn = false // the repeater may have rebooted; log in again next time
 			} else {
-				rec.OK, rec.Status = true, st
-				rec.Alerts = st.Check(o.limits)
+				rec.OK = true
 			}
 		}
 
 		if o.json {
 			enc.Encode(rec)
 		} else if rec.OK {
-			s := rec.Status
-			fmt.Printf("%s  %.2f V  noise %d dBm  rssi %d dBm  snr %.2f dB  rx %d  tx %d  up %s\n",
-				rec.Time.Format(time.DateTime), float64(s.BatteryMV)/1000, s.NoiseFloor, s.LastRSSI,
-				s.LastSNR, s.Received, s.Sent, s.Uptime.Round(time.Second))
+			line := rec.Time.Format(time.DateTime)
+			if s := rec.Status; s != nil {
+				line += fmt.Sprintf("  %.2f V  noise %d dBm  rssi %d dBm  snr %.2f dB  rx %d  tx %d  up %s",
+					float64(s.BatteryMV)/1000, s.NoiseFloor, s.LastRSSI,
+					s.LastSNR, s.Received, s.Sent, s.Uptime.Round(time.Second))
+			}
+			for _, r := range rec.Telemetry {
+				line += fmt.Sprintf("  %s %s", r.Name, r.Value)
+			}
+			fmt.Println(line)
 		} else {
 			fmt.Printf("%s  error: %s\n", rec.Time.Format(time.DateTime), rec.Error)
 		}
@@ -141,7 +166,13 @@ func watchRepeater(ctx context.Context, l *meshgore.Link, ct *meshgore.Contact, 
 			fmt.Println("ALERT:", a)
 		}
 		if csvw != nil && rec.OK {
-			csvw.Write(csvRow(rec))
+			if o.status {
+				csvw.Write(csvRow(rec))
+			} else {
+				for _, r := range rec.Telemetry {
+					csvw.Write([]string{rec.Time.Format(time.RFC3339), strconv.Itoa(r.Channel), r.Name, r.Value})
+				}
+			}
 			csvw.Flush()
 		}
 	}
@@ -226,7 +257,7 @@ func (s *consoleSource) Reconnect(ctx context.Context) error {
 func watchCompanion(ctx context.Context, src statsSource, interval time.Duration, csvPath string, limits meshgore.Thresholds, asJSON bool, out io.Writer) int {
 	var csvw *csv.Writer
 	if csvPath != "" {
-		w, f, err := openCSV(csvPath)
+		w, f, err := openCSV(csvPath, csvHeader)
 		if err != nil {
 			fmt.Println("error:", err)
 			return exitFail

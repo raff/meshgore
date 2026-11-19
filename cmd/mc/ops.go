@@ -24,7 +24,7 @@ type repeaterOpts struct {
 	out                    io.Writer // where JSON goes; progress text goes to os.Stdout
 	limits                 meshgore.Thresholds
 	safe                   bool          // refuse commands that are not known read-only
-	watch                  time.Duration // poll status at this interval instead of a single run
+	watch                  time.Duration // poll status and/or telemetry at this interval instead of a single run
 	csvPath                string        // with watch: append readings to this CSV file
 }
 
@@ -93,6 +93,9 @@ func runRepeater(ctx context.Context, l *meshgore.Link, o repeaterOpts) int {
 	}
 	fmt.Println("Logged in")
 	if o.watch > 0 {
+		if !o.status && !o.telemetry {
+			o.status = true // watching with no choice of data reads the status
+		}
 		return watchRepeater(ctx, l, ct, o)
 	}
 	defer client.Logout(ct.PublicKey)

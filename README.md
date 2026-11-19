@@ -458,6 +458,12 @@ login on each reading. Each reading prints one line; the thresholds
 (`-min-battery`, `-max-noise`) print an `ALERT:` line when crossed, and the
 program keeps running. `watch` cannot be combined with commands.
 
+Add `telemetry` to watch the repeater's sensor readings instead of (or, with
+`status telemetry watch 5m`, as well as) its status. Status and telemetry are
+separate requests to the repeater, so both are sent at each interval. With
+`-csv`, a telemetry-only watch writes one `time,channel,name,value` row per
+reading; `-csv` cannot log status and telemetry together.
+
 - `-csv=<file>` appends each successful reading to a CSV file, writing the
   header when the file is new. Columns: `time`, `battery_v`, `uptime_s`,
   `noise_floor_dbm`, `last_rssi_dbm`, `last_snr_db`, `tx_queue_len`,

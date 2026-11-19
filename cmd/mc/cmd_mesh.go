@@ -439,6 +439,9 @@ func cmdRepeater(s *session, args []string) int {
 	if o.watch > 0 && len(o.cmds) > 0 {
 		return usageError(fs, "watch cannot be combined with commands")
 	}
+	if o.watch > 0 && o.status && o.telemetry && o.csvPath != "" {
+		return usageError(fs, "-csv with watch logs either status or telemetry, not both")
+	}
 	if !o.status && !o.telemetry && o.watch == 0 && len(o.cmds) == 0 {
 		o.status = true // a bare "repeater NAME" shows its status
 	}
