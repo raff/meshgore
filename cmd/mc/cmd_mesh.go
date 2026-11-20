@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -26,7 +27,7 @@ func init() {
 		&command{"dm", "Messages", "CONTACT TEXT...", "send a direct message and wait for the acknowledgement", cmdDM},
 		&command{"send", "Messages", "CHANNEL TEXT...", "send a message on a channel (name or slot number)", cmdSend},
 		&command{"healthcheck", "Messages", "[-wait DURATION] CODE", "send CODE on #healthcheck; with -wait, wait for it to be echoed", cmdHealthcheck},
-		&command{"contacts", "Contacts and channels", "[-sort name|advert|type] [-max-age AGE] [-match TEXT] [-full] [TYPES]", "list the contacts: filter by type, name or age, sort them", cmdContacts},
+		&command{"contacts", "Contacts and channels", "[-sort name|advert|type|distance] [-miles] [-max-age AGE] [-match TEXT] [-full] [TYPES]", "list the contacts: filter by type, name or age, sort them", cmdContacts},
 		&command{"contact", "Contacts and channels", "remove NAME", "remove a contact from the node", cmdContact},
 		&command{"channels", "Contacts and channels", "", "list the channels", cmdChannels},
 		&command{"channel", "Contacts and channels", "add NAME [-secret HEX|random] [-slot N] [-overwrite] | remove NAME|SLOT [-overwrite]", "add or empty a channel", cmdChannel},
@@ -208,9 +209,10 @@ func cmdHealthcheck(s *session, args []string) int {
 }
 
 func cmdContacts(s *session, args []string) int {
-	fs := newFlags("contacts", "[-full] [-sort name|advert|type] [-max-age AGE] [-match TEXT] [TYPES]")
+	fs := newFlags("contacts", "[-full] [-sort name|advert|type|distance] [-miles] [-max-age AGE] [-match TEXT] [TYPES]")
 	full := fs.Bool("full", false, "discard the cache and download every contact again")
-	sortBy := fs.String("sort", "name", "order: name, advert (most recently heard first) or type")
+	sortBy := fs.String("sort", "name", "order: name, advert (most recently heard first), type or distance (nearest first)")
+	miles := fs.Bool("miles", false, "show distances in miles instead of km")
 	maxAge := fs.String("max-age", "", "hide contacts not heard from for longer than this, e.g. 36h or 7d (the times are the nodes' own clocks)")
 	match := fs.String("match", "", "show only names containing this text")
 	rest, code, ok := parseFlags(fs, args)
@@ -219,9 +221,9 @@ func cmdContacts(s *session, args []string) int {
 	}
 	view := contactView{match: *match, sortBy: *sortBy}
 	switch *sortBy {
-	case "name", "advert", "type":
+	case "name", "advert", "type", "distance":
 	default:
-		return usageError(fs, "-sort must be name, advert or type, not %q", *sortBy)
+		return usageError(fs, "-sort must be name, advert, type or distance, not %q", *sortBy)
 	}
 	if *maxAge != "" {
 		var err error
@@ -249,18 +251,24 @@ func cmdContacts(s *session, args []string) int {
 		fmt.Println("error:", err)
 		return exitFail
 	}
+	view.from = positionOf(l.Self.Lat, l.Self.Lon)
+	if *sortBy == "distance" && view.from == nil {
+		fmt.Println("note: this node has no position, so there are no distances to sort by")
+	}
 	now := time.Now()
 	shown := view.apply(all, now)
 	if s.g.json {
 		type entry struct {
-			Name       string  `json:"name"`
-			Type       string  `json:"type"`
-			Key        string  `json:"key"`
-			LastAdvert string  `json:"last_advert,omitempty"`
-			AgeS       int64   `json:"age_s,omitempty"`
-			ClockAhead bool    `json:"clock_ahead,omitempty"`
-			Lat        float64 `json:"lat,omitempty"`
-			Lon        float64 `json:"lon,omitempty"`
+			Name       string   `json:"name"`
+			Type       string   `json:"type"`
+			Key        string   `json:"key"`
+			LastAdvert string   `json:"last_advert,omitempty"`
+			AgeS       int64    `json:"age_s,omitempty"`
+			ClockAhead bool     `json:"clock_ahead,omitempty"`
+			Lat        float64  `json:"lat,omitempty"`
+			Lon        float64  `json:"lon,omitempty"`
+			Hops       *int     `json:"hops,omitempty"` // 0 is direct; absent for flood
+			DistanceKm *float64 `json:"distance_km,omitempty"`
 		}
 		out := struct {
 			Total    int     `json:"total"`
@@ -268,6 +276,14 @@ func cmdContacts(s *session, args []string) int {
 		}{Total: len(all), Contacts: []entry{}}
 		for _, ct := range shown {
 			e := entry{Name: ct.Name, Type: ct.TypeName(), Key: hex.EncodeToString(ct.PublicKey[:]), Lat: ct.Lat, Lon: ct.Lon}
+			if ct.OutPathLen >= 0 {
+				n := ct.OutPathLen
+				e.Hops = &n
+			}
+			if km, ok := view.distanceFrom(ct); ok {
+				km = math.Round(km*10) / 10
+				e.DistanceKm = &km
+			}
 			if heard(ct) {
 				e.LastAdvert = ct.LastAdvert.UTC().Format(time.RFC3339)
 				if clockAhead(ct, now) {
@@ -284,9 +300,7 @@ func cmdContacts(s *session, args []string) int {
 		return exitOK
 	}
 	fmt.Printf("Contacts (%d of %d, %d new or changed):\n", len(shown), len(all), changed)
-	for _, ct := range shown {
-		fmt.Println(contactLine(ct, now))
-	}
+	printContacts(os.Stdout, shown, now, view, *miles)
 	return exitOK
 }
 

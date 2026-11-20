@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -161,5 +162,66 @@ func TestContactLineClockAhead(t *testing.T) {
 	never := typed(3, "never", 2, -1, now)
 	if got := contactLine(never, now); !strings.Contains(got, "no advert time") {
 		t.Errorf("%q", got)
+	}
+}
+
+func TestHopsAndDistance(t *testing.T) {
+	for n, want := range map[int]string{-1: "", 0: "direct", 1: "1 hop", 3: "3 hops"} {
+		if got := hopsString(&meshgore.Contact{OutPathLen: n}); got != want {
+			t.Errorf("hopsString(%d) = %q, want %q", n, got, want)
+		}
+	}
+	// San Francisco to Los Angeles is about 559 km.
+	d := distanceKm(position{37.7749, -122.4194}, position{34.0522, -118.2437})
+	if d < 555 || d > 563 {
+		t.Errorf("distance = %.1f km, want about 559", d)
+	}
+	if positionOf(0, 0) != nil {
+		t.Error("0,0 should mean no position")
+	}
+
+	far, near, none := contact(1, "far", 1), contact(2, "near", 1), contact(3, "none", 1)
+	far.Lat, far.Lon = 34.0522, -118.2437
+	near.Lat, near.Lon = 37.8, -122.4
+	none.Lat, none.Lon = 0, 0
+	v := contactView{sortBy: "distance", from: positionOf(37.7749, -122.4194)}
+	got := v.apply([]*meshgore.Contact{none, far, near}, time.Now())
+	if got[0].Name != "near" || got[1].Name != "far" || got[2].Name != "none" {
+		t.Errorf("sort by distance: %s %s %s", got[0].Name, got[1].Name, got[2].Name)
+	}
+	near.OutPathLen = 2
+	var out strings.Builder
+	printContacts(&out, []*meshgore.Contact{near, none}, time.Now(), v, false)
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[0], "NAME") || !strings.Contains(lines[0], "DISTANCE") {
+		t.Fatalf("table:\n%s", out.String())
+	}
+	if !strings.Contains(lines[1], "2 hops") || !strings.Contains(lines[1], " km") {
+		t.Errorf("row lacks hops or distance: %s", lines[1])
+	}
+	if strings.Contains(lines[2], "km") {
+		t.Errorf("a contact with no position shows a distance: %s", lines[2])
+	}
+	// the key column lines up in every row
+	if strings.Index(lines[0], "KEY") != strings.Index(lines[1], fmt.Sprintf("%x", near.PublicKey[:6])) {
+		t.Errorf("columns do not line up:\n%s", out.String())
+	}
+	out.Reset()
+	none.OutPathLen = -1
+	printContacts(&out, []*meshgore.Contact{none}, time.Now(), contactView{}, false)
+	if strings.Contains(out.String(), "DISTANCE") || strings.Contains(out.String(), "ROUTE") {
+		t.Errorf("empty columns are shown:\n%s", out.String())
+	}
+}
+
+func TestCachePathLen(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	direct, flood := contact(1, "direct", 1), contact(2, "flood", 1)
+	direct.OutPathLen, flood.OutPathLen = 0, -1
+	saveContactCache("pathnode", []*meshgore.Contact{direct, flood}, 1)
+	got, _ := loadContactCache("pathnode")
+	if len(got) != 2 || got[0].OutPathLen != 0 || got[1].OutPathLen != -1 {
+		t.Errorf("path lengths lost in the cache: %+v", got)
 	}
 }

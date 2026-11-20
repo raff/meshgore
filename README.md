@@ -186,7 +186,7 @@ port to come back (`-reconnect-wait`). Tried on a Seeed SenseCAP Solar repeater
 
 `contacts` takes a list of node types (`chat`, `repeater`, `room`, `sensor`), `-match TEXT` for part
 of a name (ignoring case), `-max-age 90m|36h|7d` to hide contacts not heard from for that long,
-and `-sort name|advert|type` (the default is by name). A contact the node never heard has no advert
+`-sort name|advert|type|distance` (the default is by name; distance is nearest first), and `-miles`. Each contact with a stored route shows `direct` or `N hops`, and one with a position shows its distance from this node (when this node has a position too); `-json` has `hops` and `distance_km`. A contact the node never heard has no advert
 time and counts as stale. The times are the advertising nodes' **own clocks**: a node with a
 wrong clock can look old, or be dated in the future, and those are shown as "its clock is ahead"
 (kept by `-max-age`, since it was clearly heard, and ranked as recent when sorting by `advert`).

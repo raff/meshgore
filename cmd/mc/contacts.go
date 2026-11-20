@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/raff/meshgore"
 )
@@ -25,6 +28,7 @@ type cachedContact struct {
 	Lat        float64 `json:"lat,omitempty"`
 	Lon        float64 `json:"lon,omitempty"`
 	LastMod    uint32  `json:"lastmod,omitempty"`
+	PathLen    *int    `json:"path_len,omitempty"` // hops of the stored route; absent means flood or unknown
 }
 
 // cacheFile is the on-disk format. LastMod is what the next incremental sync
@@ -72,6 +76,9 @@ func loadContactCache(node string) ([]*meshgore.Contact, uint32) {
 			Name: e.Name, Type: e.Type, Flags: e.Flags, OutPathLen: -1,
 			LastAdvert: time.Unix(e.LastAdvert, 0), Lat: e.Lat, Lon: e.Lon, LastMod: e.LastMod,
 		}
+		if e.PathLen != nil {
+			ct.OutPathLen = *e.PathLen
+		}
 		copy(ct.PublicKey[:], key)
 		out = append(out, ct)
 	}
@@ -89,6 +96,10 @@ func saveContactCache(node string, contacts []*meshgore.Contact, lastMod uint32)
 		f.Contacts[i] = cachedContact{
 			Key: hex.EncodeToString(ct.PublicKey[:]), Name: ct.Name, Type: ct.Type, Flags: ct.Flags,
 			LastAdvert: ct.LastAdvert.Unix(), Lat: ct.Lat, Lon: ct.Lon, LastMod: ct.LastMod,
+		}
+		if ct.OutPathLen >= 0 {
+			n := ct.OutPathLen
+			f.Contacts[i].PathLen = &n
 		}
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
@@ -179,7 +190,58 @@ type contactView struct {
 	types  byte          // advert types to show, one bit each (1<<type); 0 means all
 	match  string        // show only names containing this, ignoring case
 	maxAge time.Duration // hide contacts not heard from for longer than this; 0 means no limit
-	sortBy string        // "name" (the default), "advert" (most recently heard first) or "type"
+	sortBy string        // "name" (the default), "advert" (most recently heard first), "type" or "distance"
+	from   *position     // where we are, for distances and sorting by them; nil if unknown
+}
+
+// position is a point on the earth, in degrees.
+type position struct{ lat, lon float64 }
+
+// positionOf returns where a node is, or nil if it has no position (0,0 means none).
+func positionOf(lat, lon float64) *position {
+	if lat == 0 && lon == 0 {
+		return nil
+	}
+	return &position{lat, lon}
+}
+
+// distanceKm is the great-circle distance between two positions.
+func distanceKm(a, b position) float64 {
+	const r = 6371.0
+	rad := math.Pi / 180
+	dLat, dLon := (b.lat-a.lat)*rad, (b.lon-a.lon)*rad
+	h := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(a.lat*rad)*math.Cos(b.lat*rad)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	return 2 * r * math.Asin(math.Min(1, math.Sqrt(h)))
+}
+
+// distanceFrom is how far ct is from v.from in km; ok is false if either has no position.
+func (v contactView) distanceFrom(ct *meshgore.Contact) (km float64, ok bool) {
+	p := positionOf(ct.Lat, ct.Lon)
+	if v.from == nil || p == nil {
+		return 0, false
+	}
+	return distanceKm(*v.from, *p), true
+}
+
+// distanceString formats a distance in km, or in miles.
+func distanceString(km float64, miles bool) string {
+	if miles {
+		return fmt.Sprintf("%.1f mi", km/1.609344)
+	}
+	return fmt.Sprintf("%.1f km", km)
+}
+
+// hopsString describes a contact's stored route; empty when there is none (flood).
+func hopsString(ct *meshgore.Contact) string {
+	switch {
+	case ct.OutPathLen < 0:
+		return ""
+	case ct.OutPathLen == 0:
+		return "direct"
+	case ct.OutPathLen == 1:
+		return "1 hop"
+	}
+	return fmt.Sprintf("%d hops", ct.OutPathLen)
 }
 
 // clockSlack is how far ahead of ours a node's advert time can be before we call its clock wrong.
@@ -230,6 +292,15 @@ func (v contactView) apply(cs []*meshgore.Contact, now time.Time) []*meshgore.Co
 			if a.Type != b.Type {
 				return a.Type < b.Type
 			}
+		case "distance":
+			da, oka := v.distanceFrom(a)
+			db, okb := v.distanceFrom(b)
+			if oka != okb {
+				return oka // those with a distance come first
+			}
+			if oka && da != db {
+				return da < db
+			}
 		}
 		return byName(a, b) < 0
 	})
@@ -268,8 +339,9 @@ func ageString(d time.Duration) string {
 	return fmt.Sprintf("%dd ago", int(d/(24*time.Hour)))
 }
 
-// contactLine formats one contact for the list.
-func contactLine(ct *meshgore.Contact, now time.Time) string {
+// contactCells returns the columns of a contact's row: name, type, key, last advert, route, distance.
+// The last three are empty when unknown.
+func contactCells(ct *meshgore.Contact, now time.Time, v contactView, miles bool) []string {
 	when := "no advert time"
 	switch {
 	case clockAhead(ct, now):
@@ -277,5 +349,60 @@ func contactLine(ct *meshgore.Contact, now time.Time) string {
 	case heard(ct):
 		when = fmt.Sprintf("%s (%s)", ct.LastAdvert.Format(time.DateTime), ageString(now.Sub(ct.LastAdvert)))
 	}
-	return fmt.Sprintf("  %-24s %-8s key %x last advert %s", ct.Name, ct.TypeName(), ct.PublicKey[:6], when)
+	dist := ""
+	if km, ok := v.distanceFrom(ct); ok {
+		dist = distanceString(km, miles)
+	}
+	return []string{ct.Name, ct.TypeName(), fmt.Sprintf("%x", ct.PublicKey[:6]), when, hopsString(ct), dist}
+}
+
+// contactLine formats one contact on a line, without a header.
+func contactLine(ct *meshgore.Contact, now time.Time) string {
+	return strings.Join(contactCells(ct, now, contactView{}, false), "  ")
+}
+
+// printContacts writes the contacts as a table with a header. The ROUTE and
+// DISTANCE columns are left out when no contact has anything to put in them.
+func printContacts(w io.Writer, cs []*meshgore.Contact, now time.Time, v contactView, miles bool) {
+	header := []string{"NAME", "TYPE", "KEY", "LAST ADVERT", "ROUTE", "DISTANCE"}
+	rows := [][]string{header}
+	for _, ct := range cs {
+		rows = append(rows, contactCells(ct, now, v, miles))
+	}
+	cols := len(header)
+	for c := cols - 1; c >= 4; c-- { // drop an empty trailing column
+		empty := true
+		for _, r := range rows[1:] {
+			if r[c] != "" {
+				empty = false
+			}
+		}
+		if !empty {
+			break
+		}
+		cols--
+	}
+	width := make([]int, cols)
+	for _, r := range rows {
+		for c := 0; c < cols; c++ {
+			if n := utf8.RuneCountInString(r[c]); n > width[c] {
+				width[c] = n
+			}
+		}
+	}
+	for _, r := range rows {
+		var b strings.Builder
+		for c := 0; c < cols; c++ {
+			cell := r[c]
+			if cell == "" && r[0] != "NAME" {
+				cell = "-"
+			}
+			if c == cols-1 {
+				b.WriteString(cell)
+			} else {
+				fmt.Fprintf(&b, "%-*s  ", width[c], cell)
+			}
+		}
+		fmt.Fprintln(w, "  "+b.String())
+	}
 }
