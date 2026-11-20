@@ -88,7 +88,7 @@ mc MyNode>
   recalls earlier lines; the history is kept in the user cache directory (`mc/history`).
 - `repeater NAME`, with nothing after the name, logs in and sends what you type to the repeater
   (a password is asked for unless `-password` or `MC_PASSWORD` is given; `-password=` means
-  none). Inside it, `status` and `telemetry` read the repeater, `exit` logs out, and safe mode
+  none). Inside it, `status` and `telemetry` read the repeater, `help [COMMAND]` describes them, `exit` logs out, and safe mode
   applies. With more after the name (`repeater NAME status`) it is the ordinary command.
 - `mc -name=MyNode repl -repeater MyRepeater` starts the session already logged in to that
   repeater, so there is no `repeater MyRepeater` to type (`MC_REPEATER` sets the default for

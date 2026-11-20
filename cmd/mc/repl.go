@@ -144,7 +144,13 @@ func cmdREPL(s *session, args []string) int {
 			continue
 		case io.EOF:
 			fmt.Println()
-			r.leaveRepeater()
+			r.mu.Lock()
+			inRepeater := r.rep != nil
+			r.mu.Unlock()
+			if inRepeater { // like "exit": back to the companion prompt; a second Ctrl-D ends the session
+				r.leaveRepeater()
+				continue
+			}
 			return exitOK
 		default:
 			fmt.Println("error:", err)
@@ -434,6 +440,11 @@ func (r *repl) execRepeater(args []string, text string) bool {
 	case "verbose":
 		r.verbose(args[1:])
 		return false
+	case "help", "?":
+		if repeaterHelp(args[1:]) {
+			return false
+		}
+		// not a topic we know: let the repeater answer it
 	case "status":
 		st, err := client.RequestStatus(rep.ct.PublicKey)
 		if err != nil {
@@ -469,6 +480,95 @@ func (r *repl) execRepeater(args []string, text string) bool {
 	}
 	for _, line := range replies {
 		fmt.Println(line)
+	}
+	return false
+}
+
+// repeaterHelpText describes the commands handled locally in a repeater session.
+var repeaterHelpText = []struct{ name, text string }{
+	{"status", "read the repeater's status (battery, uptime, packet counts, ...)"},
+	{"telemetry", "read the repeater's telemetry (sensor values)"},
+	{"safe [on|off]", "show or set the read-only check for the commands sent to the repeater"},
+	{"verbose [on|off]", "show or set verbose logging"},
+	{"exit", "log out of the repeater and return to the companion prompt (also quit, logout)"},
+	{"help [COMMAND]", "list these commands, or describe one"},
+}
+
+// repeaterCLIHelp describes the repeater's own CLI commands (see CLI.md), by
+// first word. "ro" marks the ones allowed in safe mode.
+var repeaterCLIHelp = []struct {
+	name, usage, text string
+	ro                bool
+}{
+	{"ver", "", "firmware version", true},
+	{"board", "", "hardware name", true},
+	{"clock", "[sync]", "current time (UTC); sync sets it from the companion's", true},
+	{"neighbors", "", "the 8 most recent adverts, as pubkey-prefix:timestamp:snr*4", true},
+	{"get", "SETTING", "a setting's value (radio, tx, freq, name, lat, lon, role, repeat, acl, ...)", true},
+	{"set", "SETTING VALUE", "change a setting that has a get; set radio F,BW,SF,CR; set tx DBM", false},
+	{"region", "[get|list|home|default|put|remove|...]", "list or edit the regions", true},
+	{"gps", "[on|off|sync|setloc|advert [none|share|prefs]]", "GPS state and settings (builds with GPS)", true},
+	{"sensor", "list|get KEY|set KEY VALUE", "sensor settings (builds with sensors)", true},
+	{"advert", "", "send a flood advert", false},
+	{"advert.zerohop", "", "send a zero-hop advert", false},
+	{"discover.neighbors", "", "scan for zero-hop neighbors", false},
+	{"time", "EPOCH", "set the clock", false},
+	{"tempradio", "F,BW,SF,CR,MINUTES", "change radio parameters, reverting after the timeout", false},
+	{"password", "NEW", "change the admin password", false},
+	{"setperm", "PUBKEY PERMS", "add, update or remove a companion's permissions", false},
+	{"neighbor.remove", "PREFIX", "remove neighbors matching the prefix", false},
+	{"clear", "stats", "reset statistics", false},
+	{"log", "[start|stop|erase]", "capture the rx log to node storage (serial: dump it)", false},
+	{"powersaving", "on|off", "power saving (repeater only)", false},
+	{"reboot", "", "reboot; no reply is sent", false},
+	{"poweroff", "", "power off (also shutdown); no reply, needs physical access to restart", false},
+	{"clkreboot", "", "reset the clock and reboot; no reply is sent", false},
+	{"start", "ota", "start an over-the-air firmware update", false},
+}
+
+// repeaterHelp answers "help" and "help COMMAND" inside a repeater session. It
+// returns false for a topic it does not know, which the caller sends on to the
+// repeater.
+func repeaterHelp(args []string) bool {
+	if len(args) == 0 {
+		fmt.Println("In a repeater session:")
+		for _, h := range repeaterHelpText {
+			fmt.Printf("  %-18s %s\n", h.name, h.text)
+		}
+		fmt.Println("\nRepeater commands (sent to the repeater; * = allowed in safe mode):")
+		for _, h := range repeaterCLIHelp {
+			mark := " "
+			if h.ro {
+				mark = "*"
+			}
+			fmt.Printf(" %s%-18s %s\n", mark, h.name, h.text)
+		}
+		fmt.Println("\n\"help COMMAND\" shows usage. See CLI.md for the details.")
+		return true
+	}
+	name := strings.ToLower(args[0])
+	if name == "quit" || name == "logout" {
+		name = "exit"
+	}
+	for _, h := range repeaterHelpText {
+		if strings.Fields(h.name)[0] == name {
+			fmt.Printf("  %-18s %s\n", h.name, h.text)
+			return true
+		}
+	}
+	if name == "shutdown" {
+		name = "poweroff"
+	}
+	for _, h := range repeaterCLIHelp {
+		if h.name == name {
+			fmt.Printf("  %s\n  %s\n", strings.TrimSpace(h.name+" "+h.usage), h.text)
+			if h.ro {
+				fmt.Println("  Allowed in safe mode (some forms change state; see CLI.md).")
+			} else {
+				fmt.Println("  Needs \"safe off\".")
+			}
+			return true
+		}
 	}
 	return false
 }
