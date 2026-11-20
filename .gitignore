@@ -1,5 +1,6 @@
 # Binaries
 /mc
+/cmd/mc/mc
 *.exe
 *.exe~
 *.dll
