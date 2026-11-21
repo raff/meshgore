@@ -312,6 +312,8 @@ Replies from `get` start with `> `.
 ./mc -name=MyNode auto-add all                 # the default: save every advert
 ./mc -name=MyNode path-hash 1
 ./mc -name=MyNode discover repeater            # who is in direct range?
+./mc -name=MyNode adverts -advert -save -wait 2m   # who is advertising? (name, type, key)
+./mc -name=MyNode contact add -type repeater KEY64HEX Some Repeater
 ./mc -name=MyNode contact remove SomeNode
 ./mc -name=MyNode channel remove '#test'       # by name or slot number
 ```
@@ -336,6 +338,15 @@ Replies from `get` start with `> `.
 - `discover` sends a one-hop request and lists the nodes that answer, with the SNR each
   heard the other at. Names come from the contact cache. Repeaters answer at most 4 times in
   2 minutes, so repeat it sparingly.
+- `adverts` listens for `-wait` (default 60s) and prints each node it hears, with its name, type
+  and full public key, marked as a contact or not. This is how to find the key of a sender seen
+  on a channel: a channel message carries only the sender's name, never its key. `-advert` sends a
+  flood advert first, to prompt others. A node that is not a contact is only reported while
+  auto-add is off for its type; `-save` saves those as contacts. Repeaters advertise only every few
+  hours, so a longer `-wait` may be needed.
+- `contact add [-type chat|repeater|room|sensor] KEY NAME...` saves a node you know by its 64-digit
+  key (default type `repeater`), for when its advert does not come again soon. `path`, `repeater`
+  and messages need the node to be a contact; the node refuses a login to a key it has not stored.
 - `contact remove` deletes a contact from the node and from the local cache. The node saves
   it again when it hears another advert, if auto-add allows that type.
 - `channel remove` empties a slot. The firmware has no delete: it accepts an empty name and
@@ -572,7 +583,7 @@ Options come before the command.
 | `clock`, `radio`, `tuning`, `gps`, `advert`, `set`, `auto-add`, `path-hash`, `scope` | read or change its settings |
 | `messages`, `dm`, `send`, `healthcheck` | messages |
 | `contacts`, `contact`, `channels`, `channel` | contacts and channels |
-| `discover`, `path`, `repeater`, `cli` | the network, the route to a contact, a repeater, a CLI command on the node |
+| `adverts`, `discover`, `path`, `repeater`, `cli` | the network, the route to a contact, a repeater, a CLI command on the node |
 | `scan`, `ports`, `help`, `repl` | find nodes, list serial ports, help, an interactive session |
 
 `mc help` has the arguments of each; `mc help <command>` its options.

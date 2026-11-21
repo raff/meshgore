@@ -28,9 +28,10 @@ func init() {
 		&command{"send", "Messages", "CHANNEL TEXT...", "send a message on a channel (name or slot number)", cmdSend},
 		&command{"healthcheck", "Messages", "[-wait DURATION] CODE", "send CODE on #healthcheck; with -wait, wait for it to be echoed", cmdHealthcheck},
 		&command{"contacts", "Contacts and channels", "[-sort name|advert|type|distance] [-miles] [-max-age AGE] [-match TEXT] [-full] [TYPES]", "list the contacts: filter by type, name or age, sort them", cmdContacts},
-		&command{"contact", "Contacts and channels", "remove NAME", "remove a contact from the node", cmdContact},
+		&command{"contact", "Contacts and channels", "remove NAME | add [-type TYPE] KEY NAME...", "remove a contact from the node, or add one by its key", cmdContact},
 		&command{"channels", "Contacts and channels", "", "list the channels", cmdChannels},
 		&command{"channel", "Contacts and channels", "add NAME [-secret HEX|random] [-slot N] [-overwrite] | remove NAME|SLOT [-overwrite]", "add or empty a channel", cmdChannel},
+		&command{"adverts", "Network", "[-wait DURATION] [-advert] [-save]", "listen for adverts and show the sender's name and public key, saved as a contact or not", cmdAdverts},
 		&command{"discover", "Network", "[-wait DURATION] [all|chat,repeater,room,sensor]", "ask nodes in direct radio range to identify themselves", cmdDiscover},
 		&command{"path", "Network", "CONTACT", "find the route (the repeaters) to a contact and back", cmdPath},
 		&command{"repeater", "Network", "[-password P] [-c CMD]... NAME [status] [telemetry] [watch INTERVAL] [cmd TEXT...]", "log in to a repeater through the companion and run things on it", cmdRepeater},
@@ -304,14 +305,56 @@ func cmdContacts(s *session, args []string) int {
 	return exitOK
 }
 
+// cmdContactAdd saves a node we only know by its key, for example one seen in
+// "adverts" while auto-add was off.
+func cmdContactAdd(s *session, args []string) int {
+	fs := newFlags("contact add", "[-type chat|repeater|room|sensor] KEY NAME...")
+	typ := fs.String("type", "repeater", "the node type: chat, repeater, room or sensor")
+	rest, code, ok := parseFlags(fs, args)
+	if !ok {
+		return code
+	}
+	if len(rest) < 2 {
+		return usageError(fs, "wants the 64-digit hex key and a name")
+	}
+	key, err := hex.DecodeString(rest[0])
+	if err != nil || len(key) != 32 {
+		return usageError(fs, "%q is not a 64-digit hex key", rest[0])
+	}
+	types := map[string]byte{"chat": 1, "repeater": 2, "room": 3, "sensor": 4}
+	t, found := types[strings.ToLower(*typ)]
+	if !found {
+		return usageError(fs, "unknown type %q (chat, repeater, room or sensor)", *typ)
+	}
+	name := strings.Join(rest[1:], " ")
+	if len(name) > 31 {
+		return usageError(fs, "the name is at most 31 bytes")
+	}
+	ct := &meshgore.Contact{Type: t, Name: name, LastAdvert: time.Now()}
+	copy(ct.PublicKey[:], key)
+	l := s.companion()
+	if l == nil {
+		return exitFail
+	}
+	if err := l.Client.AddContact(ct); err != nil {
+		fmt.Println("error:", err)
+		return exitFail
+	}
+	fmt.Printf("Added %s (%s, key %x)\n", name, *typ, ct.PublicKey[:6])
+	return exitOK
+}
+
 func cmdContact(s *session, args []string) int {
-	fs := newFlags("contact", "remove NAME")
+	if len(args) > 0 && args[0] == "add" {
+		return cmdContactAdd(s, args[1:])
+	}
+	fs := newFlags("contact", "remove NAME | add [-type TYPE] KEY NAME...")
 	rest, code, ok := parseFlags(fs, args)
 	if !ok {
 		return code
 	}
 	if len(rest) < 2 || rest[0] != "remove" {
-		return usageError(fs, "wants: remove NAME")
+		return usageError(fs, "wants: remove NAME, or add KEY NAME")
 	}
 	a := newActions(s)
 	a.removeContact = strings.Join(rest[1:], " ")
@@ -619,5 +662,67 @@ func cmdPath(s *session, args []string) int {
 	}
 	printPath("Out", cached, p.Out)
 	printPath("Back", cached, p.In)
+	return exitOK
+}
+
+func cmdAdverts(s *session, args []string) int {
+	fs := newFlags("adverts", "[-wait DURATION] [-advert] [-save]")
+	save := fs.Bool("save", false, "save the senders that are not contacts, so path, repeater and messages can reach them")
+	wait := fs.Duration("wait", 60*time.Second, "how long to listen")
+	sendOwn := fs.Bool("advert", false, "send a flood advert first, to prompt others to answer")
+	rest, code, ok := parseFlags(fs, args)
+	if !ok {
+		return code
+	}
+	if len(rest) > 0 {
+		return usageError(fs, "takes no arguments")
+	}
+	l := s.companion()
+	if l == nil {
+		return exitFail
+	}
+	c := l.Client
+	if *sendOwn {
+		if err := c.SendAdvert(true); err != nil {
+			fmt.Println("error:", err)
+			return exitFail
+		}
+		fmt.Println("Flood advert sent")
+	}
+	names := map[[32]byte]string{}
+	if cached, _ := loadContactCache(s.node()); cached != nil {
+		for _, ct := range cached {
+			names[ct.PublicKey] = ct.Name
+		}
+	}
+	fmt.Printf("Listening for adverts (%s)...\n", *wait)
+	n := 0
+	err := c.ListenAdverts(s.ctx, *wait, func(a *meshgore.Advert) {
+		n++
+		if a.Known {
+			name := names[a.Key]
+			if name == "" {
+				name = "(contact)"
+			}
+			fmt.Printf("  %-24s %-8s key %x  [contact]\n", name, "", a.Key)
+			return
+		}
+		status := "[not a contact]"
+		if *save {
+			if err := c.AddContact(a.Info); err != nil {
+				status += " (not saved: " + err.Error() + ")"
+			} else {
+				status = "[saved as a contact]"
+			}
+		}
+		fmt.Printf("  %-24s %-8s key %x  %s\n", a.Info.Name, a.Info.TypeName(), a.Key, status)
+	})
+	if err != nil && s.ctx.Err() == nil {
+		fmt.Println("error:", err)
+		return exitFail
+	}
+	if n == 0 {
+		fmt.Println("No adverts heard. Repeaters and bots advertise only every few hours; try -advert or a longer -wait.")
+	}
 	return exitOK
 }

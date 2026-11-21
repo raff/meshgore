@@ -18,9 +18,9 @@ func TestCompleteLine(t *testing.T) {
 		{"gps o", []string{"gps off", "gps on"}},
 		{"gps of", []string{"gps off"}},
 		{"channel re", []string{"channel remove"}},
-		{"help adv", []string{"help advert"}},
+		{"help adv", []string{"help advert", "help adverts"}},
 		{"auto-add rep", []string{"auto-add repeater"}},
-		{"  adv", []string{"  advert"}}, // leading spaces stay
+		{"  adv", []string{"  advert", "  adverts"}}, // leading spaces stay
 		{"safe ", []string{"safe off", "safe on"}},
 		{"nosuchword", nil},
 		{"clock sync ", nil}, // nothing more to complete

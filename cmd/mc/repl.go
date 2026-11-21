@@ -511,6 +511,7 @@ var repeaterCLIHelp = []struct {
 	{"sensor", "list|get KEY|set KEY VALUE", "sensor settings (builds with sensors)", true},
 	{"advert", "", "send a flood advert", false},
 	{"advert.zerohop", "", "send a zero-hop advert", false},
+	{"adverts", "", "listen for adverts and show sender keys", false},
 	{"discover.neighbors", "", "scan for zero-hop neighbors", false},
 	{"time", "EPOCH", "set the clock", false},
 	{"tempradio", "F,BW,SF,CR,MINUTES", "change radio parameters, reverting after the timeout", false},
@@ -593,7 +594,7 @@ func (r *repl) leaveRepeater() {
 // contacts and channels the command takes.
 var subWords = map[string][]string{
 	"channel":  {"add", "remove", "list"},
-	"contact":  {"remove"},
+	"contact":  {"remove", "add"},
 	"set":      {"name", "position", "share-location", "multi-acks"},
 	"clock":    {"sync"},
 	"radio":    {"set"},
