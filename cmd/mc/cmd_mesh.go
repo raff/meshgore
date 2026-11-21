@@ -704,7 +704,7 @@ func cmdAdverts(s *session, args []string) int {
 			if name == "" {
 				name = "(contact)"
 			}
-			fmt.Printf("  %-24s %-8s key %x  [contact]\n", name, "", a.Key)
+			fmt.Printf("  %-24s %-8s key %x  [contact]%s\n", name, "", a.Key, routeString(a, names))
 			return
 		}
 		status := "[not a contact]"
@@ -715,7 +715,7 @@ func cmdAdverts(s *session, args []string) int {
 				status = "[saved as a contact]"
 			}
 		}
-		fmt.Printf("  %-24s %-8s key %x  %s\n", a.Info.Name, a.Info.TypeName(), a.Key, status)
+		fmt.Printf("  %-24s %-8s key %x  %s%s\n", a.Info.Name, a.Info.TypeName(), a.Key, status, routeString(a, names))
 	})
 	if err != nil && s.ctx.Err() == nil {
 		fmt.Println("error:", err)
@@ -725,4 +725,32 @@ func cmdAdverts(s *session, args []string) int {
 		fmt.Println("No adverts heard. Repeaters and bots advertise only every few hours; try -advert or a longer -wait.")
 	}
 	return exitOK
+}
+
+// routeString says how an advert reached us: direct, or through which repeaters.
+func routeString(a *meshgore.Advert, names map[[32]byte]string) string {
+	switch {
+	case a.Direct:
+		return "\n      direct (zero hops)"
+	case len(a.Path) == 0:
+		return ""
+	}
+	var hops []string
+	for _, h := range a.Path {
+		name := ""
+		for k, n := range names {
+			if bytes.HasPrefix(k[:], h) {
+				if name != "" {
+					name += "|"
+				}
+				name += n
+			}
+		}
+		if name == "" {
+			hops = append(hops, fmt.Sprintf("%x", h))
+		} else {
+			hops = append(hops, fmt.Sprintf("%x (%s)", h, name))
+		}
+	}
+	return fmt.Sprintf("\n      %d hop(s), nearest the sender first: %s", len(hops), strings.Join(hops, " > "))
 }

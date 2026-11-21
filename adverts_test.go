@@ -36,3 +36,32 @@ func TestAddContactCmd(t *testing.T) {
 		t.Fatalf("round trip: %+v, %v", back, err)
 	}
 }
+
+func TestParseRxAdvert(t *testing.T) {
+	key := make([]byte, 32)
+	key[0] = 0xEE
+	// SNR, RSSI, header (flood, advert), 2 hops of 1 byte, payload
+	f := append([]byte{pushLogData, 20, 0xB0, 1 | payloadAdvert<<2, 2, 0xAA, 0xBB}, key...)
+	r, ok := parseRxAdvert(f)
+	if !ok || r.key[0] != 0xEE || len(r.path) != 2 || r.path[0][0] != 0xAA || r.path[1][0] != 0xBB || r.direct {
+		t.Fatalf("flood advert: %+v ok=%v", r, ok)
+	}
+	// transport flood, 2-byte hashes, 1 hop
+	f = append([]byte{pushLogData, 0, 0, 0 | payloadAdvert<<2, 1, 2, 3, 4, 0x41, 0xAA, 0xBB}, key...)
+	r, ok = parseRxAdvert(f)
+	if !ok || len(r.path) != 1 || len(r.path[0]) != 2 || r.path[0][1] != 0xBB {
+		t.Fatalf("transport advert: %+v ok=%v", r, ok)
+	}
+	// zero hop
+	f = append([]byte{pushLogData, 0, 0, 1 | payloadAdvert<<2, 0}, key...)
+	if r, ok = parseRxAdvert(f); !ok || !r.direct || len(r.path) != 0 {
+		t.Fatalf("direct advert: %+v ok=%v", r, ok)
+	}
+	// not an advert (group text), truncated
+	if _, ok = parseRxAdvert([]byte{pushLogData, 0, 0, 1 | 5<<2, 0, 1, 2}); ok {
+		t.Fatal("group text taken for an advert")
+	}
+	if _, ok = parseRxAdvert(f[:12]); ok {
+		t.Fatal("truncated advert accepted")
+	}
+}

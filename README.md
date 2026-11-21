@@ -343,7 +343,10 @@ Replies from `get` start with `> `.
   on a channel: a channel message carries only the sender's name, never its key. `-advert` sends a
   flood advert first, to prompt others. A node that is not a contact is only reported while
   auto-add is off for its type; `-save` saves those as contacts. Repeaters advertise only every few
-  hours, so a longer `-wait` may be needed.
+  hours, so a longer `-wait` may be needed. Under each node it prints the route the advert took,
+  read from the node's raw RX log: `direct (zero hops)`, or the repeaters it went through,
+  nearest the sender first, named from the contact cache. If the same advert arrives by several
+  routes, the shortest is shown. This is the way to see how far a node is without logging in to it.
 - `contact add [-type chat|repeater|room|sensor] KEY NAME...` saves a node you know by its 64-digit
   key (default type `repeater`), for when its advert does not come again soon. `path`, `repeater`
   and messages need the node to be a contact; the node refuses a login to a key it has not stored.
