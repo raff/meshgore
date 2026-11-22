@@ -633,7 +633,7 @@ func (r *repl) complete(line string) []string {
 	inRepeater := r.rep != nil
 	r.mu.Unlock()
 	if inRepeater {
-		return nil
+		return completeRepeaterLine(line)
 	}
 	return completeLine(line, r.s.node())
 }
@@ -687,6 +687,11 @@ func completeLine(line, node string) []string {
 		cands = subWords[cmd]
 	}
 
+	return matching(cands, head, typed)
+}
+
+// matching returns head+c for the candidates that start with typed, ignoring case, sorted.
+func matching(cands []string, head, typed string) []string {
 	var out []string
 	for _, c := range cands {
 		if strings.HasPrefix(strings.ToLower(c), strings.ToLower(typed)) {
@@ -695,6 +700,60 @@ func completeLine(line, node string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// repeaterSubWords are the usual words after some of the repeater's commands.
+var repeaterSubWords = map[string][]string{
+	"get":         {"radio", "tx", "freq", "name", "lat", "lon", "role", "repeat", "acl", "af", "guest.password", "owner.info"},
+	"set":         {"radio", "tx", "freq", "name", "lat", "lon", "role", "repeat", "af", "guest.password", "owner.info"},
+	"clock":       {"sync"},
+	"region":      {"get", "list", "home", "default", "put", "remove", "allowf", "denyf", "save", "load"},
+	"gps":         {"on", "off", "sync", "setloc", "advert"},
+	"sensor":      {"list", "get", "set"},
+	"clear":       {"stats"},
+	"log":         {"start", "stop", "erase"},
+	"start":       {"ota"},
+	"powersaving": {"on", "off"},
+}
+
+// completeRepeaterLine completes inside a repeater session: the local commands and
+// the repeater's own CLI commands, then the usual words after some of them.
+func completeRepeaterLine(line string) []string {
+	words := strings.Fields(line)
+	endsSpace := strings.HasSuffix(line, " ")
+	if len(words) == 0 || (len(words) == 1 && !endsSpace) {
+		typed := ""
+		if len(words) == 1 {
+			typed = words[0]
+		}
+		cands := []string{"status", "telemetry", "safe", "verbose", "exit", "help"}
+		for _, h := range repeaterCLIHelp {
+			cands = append(cands, h.name)
+		}
+		return matching(cands, line[:len(line)-len(typed)], typed)
+	}
+	index, typed := len(words), "" // which word is being completed
+	head := line
+	if !endsSpace {
+		index, typed = len(words)-1, words[len(words)-1]
+		head = line[:len(line)-len(typed)]
+	}
+	if index != 1 {
+		return nil
+	}
+	var cands []string
+	switch cmd := words[0]; cmd {
+	case "help":
+		for _, h := range repeaterCLIHelp {
+			cands = append(cands, h.name)
+		}
+		cands = append(cands, "status", "telemetry", "safe", "verbose", "exit")
+	case "safe", "verbose":
+		cands = []string{"on", "off"}
+	default:
+		cands = repeaterSubWords[cmd]
+	}
+	return matching(cands, head, typed)
 }
 
 // interactive reports whether stdin and stdout are both terminals.

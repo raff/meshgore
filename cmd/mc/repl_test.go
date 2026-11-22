@@ -152,3 +152,22 @@ func TestBareRepeaterBecomesREPL(t *testing.T) {
 		}
 	}
 }
+
+func TestCompleteRepeaterLine(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		want []string
+	}{
+		{"sta", []string{"start", "status"}},
+		{"nei", []string{"neighbor.remove", "neighbors"}},
+		{"get r", []string{"get radio", "get repeat", "get role"}},
+		{"clock ", []string{"clock sync"}},
+		{"help rebo", []string{"help reboot"}},
+		{"safe o", []string{"safe off", "safe on"}},
+		{"get radio x", nil},
+	} {
+		if got := completeRepeaterLine(c.line); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%q: got %v, want %v", c.line, got, c.want)
+		}
+	}
+}
