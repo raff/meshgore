@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -130,6 +131,24 @@ func TestREPLOptions(t *testing.T) {
 	for _, args := range [][]string{{"extra"}, {"-nope"}, {"-timeout", "soon"}} {
 		if code := cmdREPL(s, args); code != exitUsage {
 			t.Errorf("repl %q: exit %d, want %d", args, code, exitUsage)
+		}
+	}
+}
+
+func TestBareRepeaterBecomesREPL(t *testing.T) {
+	for _, tc := range []struct{ in, want []string }{
+		{[]string{"repeater", "Rep"}, []string{"repl", "-repeater", "Rep"}},
+		{[]string{"repeater", "-password", "pw", "Rep"}, []string{"repl", "-password=pw", "-repeater", "Rep"}},
+		{[]string{"repeater", "Rep", "status"}, nil},
+		{[]string{"repeater", "-c", "ver", "Rep"}, nil},
+		{[]string{"status"}, nil},
+	} {
+		want := tc.want
+		if want == nil {
+			want = tc.in
+		}
+		if got := bareRepeaterToREPL(tc.in); strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("%v: got %v, want %v", tc.in, got, want)
 		}
 	}
 }

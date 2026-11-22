@@ -48,6 +48,9 @@ func main() {
 		usage()
 		os.Exit(exitUsage)
 	}
+	if !g.json && !g.console && interactive() {
+		args = bareRepeaterToREPL(args)
+	}
 	if lookup(args[0]) == nil {
 		fmt.Fprintf(os.Stderr, "mc: unknown command %q\n\n", args[0])
 		usage()

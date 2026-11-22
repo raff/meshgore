@@ -49,41 +49,50 @@ func messagePrinter(s *session, l *meshgore.Link, emit func(string)) func() []*m
 	if emit == nil {
 		emit = func(line string) { fmt.Println(line) }
 	}
+	format := messageFormatter(s.node(), l)
+	return func() []*meshgore.Message {
+		msgs, err := l.Client.SyncMessages() // l.Client changes on reconnect
+		for _, msg := range msgs {
+			emit(format(msg))
+		}
+		if err != nil {
+			emit("message sync: " + err.Error())
+		}
+		return msgs
+	}
+}
+
+// messageFormatter returns a function that formats a message as one line, naming
+// the channel or the sender from the channel list and the contact cache.
+func messageFormatter(node string, l *meshgore.Link) func(*meshgore.Message) string {
 	names := map[int]string{} // channel names, looked up the first time each is needed
 	channelName := func(idx int) string {
 		if n, ok := names[idx]; ok {
 			return n
 		}
 		n := ""
-		if ch, err := l.Client.GetChannel(idx); err == nil {
+		if ch, err := l.Client.GetChannel(idx); err == nil { // l.Client changes on reconnect
 			n = ch.Name
 		}
 		names[idx] = n
 		return n
 	}
 	contactNames := map[[6]byte]string{}
-	cached, _ := loadContactCache(s.node())
+	cached, _ := loadContactCache(node)
 	for _, ct := range cached {
 		contactNames[[6]byte(ct.PublicKey[:6])] = ct.Name
 	}
-	return func() []*meshgore.Message {
-		msgs, err := l.Client.SyncMessages() // l.Client changes on reconnect
-		for _, msg := range msgs {
-			from := fmt.Sprintf("%x", msg.From)
-			if msg.Channel {
-				from = channelName(msg.ChannelIdx)
-				if from == "" {
-					from = fmt.Sprintf("channel %d", msg.ChannelIdx)
-				}
-			} else if n := contactNames[msg.From]; n != "" {
-				from = n
+	return func(msg *meshgore.Message) string {
+		from := fmt.Sprintf("%x", msg.From)
+		if msg.Channel {
+			from = channelName(msg.ChannelIdx)
+			if from == "" {
+				from = fmt.Sprintf("channel %d", msg.ChannelIdx)
 			}
-			emit(fmt.Sprintf("[%s] %s: %s", msg.Time.Format(time.DateTime), from, msg.Text))
+		} else if n := contactNames[msg.From]; n != "" {
+			from = n
 		}
-		if err != nil {
-			emit("message sync: " + err.Error())
-		}
-		return msgs
+		return fmt.Sprintf("[%s] %s: %s", msg.Time.Format(time.DateTime), from, msg.Text)
 	}
 }
 

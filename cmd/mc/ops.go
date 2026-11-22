@@ -128,13 +128,14 @@ func runRepeater(ctx context.Context, l *meshgore.Link, o repeaterOpts) int {
 	}
 
 	from := [6]byte(ct.PublicKey[:6])
+	format := messageFormatter(o.node, l)
 	for _, c := range o.cmds {
 		fmt.Printf("> %s\n", c)
 		if err := client.SendCLI(ct.PublicKey, c); err != nil {
 			return fail(err)
 		}
 		replies := client.CollectReplies(from, o.timeout, 3*time.Second, func(m *meshgore.Message) {
-			fmt.Printf("(other message: %q)\n", m.Text)
+			fmt.Println(format(m)) // not a reply: show it like any other message
 		})
 		if len(replies) == 0 {
 			return fail(fmt.Errorf("no reply to %q within %s", c, o.timeout))

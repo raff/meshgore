@@ -26,9 +26,10 @@ func init() {
 // (and a repeater login) is made once. While it waits at the prompt, new messages
 // are printed as they arrive.
 type repl struct {
-	s    *session
-	line *liner.State
-	base context.Context
+	s        *session
+	line     *liner.State
+	histPath string // the history file in use
+	base     context.Context
 
 	mu       sync.Mutex // guards what follows, and serialises output with the prompt
 	atPrompt bool
@@ -88,13 +89,9 @@ func cmdREPL(s *session, args []string) int {
 	defer r.line.Close()
 	r.line.SetCtrlCAborts(true)
 	r.line.SetCompleter(r.complete)
-	hist := historyPath()
-	if hist != "" {
-		if f, err := os.Open(hist); err == nil {
-			r.line.ReadHistory(f)
-			f.Close()
-		}
-		defer r.saveHistory(hist)
+	if r.histPath = historyPath("history"); r.histPath != "" {
+		r.loadHistory(r.histPath)
+		defer func() { r.saveHistory(r.histPath) }()
 	}
 
 	// Ctrl-C stops the command that is running. At the prompt the terminal is in raw
@@ -168,12 +165,32 @@ func cmdREPL(s *session, args []string) int {
 	}
 }
 
-func historyPath() string {
+func historyPath(name string) string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(dir, "mc", "history")
+	return filepath.Join(dir, "mc", name)
+}
+
+func (r *repl) loadHistory(path string) {
+	if f, err := os.Open(path); err == nil {
+		r.line.ReadHistory(f)
+		f.Close()
+	}
+}
+
+// useHistory saves the history in use and switches to the one in the named file,
+// so a repeater session has its own history, apart from the companion's.
+func (r *repl) useHistory(name string) {
+	path := historyPath(name)
+	if r.histPath == "" || path == "" {
+		return
+	}
+	r.saveHistory(r.histPath)
+	r.line.ClearHistory()
+	r.loadHistory(path)
+	r.histPath = path
 }
 
 func (r *repl) saveHistory(path string) {
@@ -424,6 +441,7 @@ func (r *repl) enterRepeater(args []string) (handled, ok bool) {
 	r.mu.Lock()
 	r.rep = &repeaterMode{ct: ct, timeout: timeout}
 	r.mu.Unlock()
+	r.useHistory("history-repeater")
 	return true, true
 }
 
@@ -472,8 +490,9 @@ func (r *repl) execRepeater(args []string, text string) bool {
 		fmt.Println("error:", err)
 		return false
 	}
+	format := messageFormatter(r.s.node(), r.s.link)
 	replies := client.CollectReplies([6]byte(rep.ct.PublicKey[:6]), rep.timeout, 3*time.Second, func(m *meshgore.Message) {
-		fmt.Printf("(other message: %q)\n", m.Text)
+		r.say(format(m)) // a message for the companion, not a reply: show it like any other
 	})
 	if len(replies) == 0 {
 		fmt.Printf("error: no reply to %q within %s\n", text, rep.timeout)
@@ -587,6 +606,7 @@ func (r *repl) leaveRepeater() {
 		l.Client.Logout(rep.ct.PublicKey)
 	}
 	fmt.Println("Logged out.")
+	r.useHistory("history")
 	r.catchUp()
 }
 
@@ -675,4 +695,34 @@ func completeLine(line, node string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// interactive reports whether stdin and stdout are both terminals.
+func interactive() bool {
+	for _, f := range []*os.File{os.Stdin, os.Stdout} {
+		if fi, err := f.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// bareRepeaterToREPL turns "repeater [-password P] [-timeout D] NAME", with no
+// action or -c command, into "repl -repeater NAME ...": an interactive session on
+// the repeater. Any other form is returned unchanged ("repeater NAME status" still
+// shows the status).
+func bareRepeaterToREPL(args []string) []string {
+	if len(args) < 2 || args[0] != "repeater" {
+		return args
+	}
+	fs := flag.NewFlagSet("repeater", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.String("password", "", "")
+	fs.Duration("timeout", 0, "")
+	if fs.Parse(args[1:]) != nil || fs.NArg() != 1 {
+		return args
+	}
+	out := []string{"repl"}
+	fs.Visit(func(f *flag.Flag) { out = append(out, "-"+f.Name+"="+f.Value.String()) })
+	return append(out, "-repeater", fs.Arg(0))
 }
