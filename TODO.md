@@ -17,7 +17,14 @@ An item counts as done only after a run against a real node.
    text. To build: match our own packet (decrypt with the channel secret, `HashtagSecret` for a `#`
    channel, or compare the blocks) and make `send -wait` report "repeated by 82 (1 hop, +14 dB)", so
    a silent run tells "never left the node" from "nobody answered". Also useful for a healthcheck.
-2. **Companion commands not used yet.** From the firmware's command list; `meshcore_py` uses the
+2. **First-use script.** Run a user script the first time `mc` connects to a node it has not
+   set up (a marker per node in the config directory, keyed by the public key, so a reset node
+   that got a new key runs it again). The content would be the checklist in the README ("Set up a
+   fresh node"): name, position, clock, radio, channels, auto-add, reboot, advert, `discover -save`.
+   To decide: where the file lives (`mc/init` in the config directory?), a way to run it by hand
+   (`mc init [FILE]`), whether it may use `$node` and the node's name, a dry run, and what to do if
+   a step fails (stop, since the later ones assume the earlier ones).
+3. **Companion commands not used yet.** From the firmware's command list; `meshcore_py` uses the
    same numbers. Layouts are not checked, so confirm them in the firmware source before building:
    - `0x36` (54) a flood scope key for the next sends, in RAM only (a per-send override of the default
      scope; sub-mode 1 forces unscoped). The default scope itself (63/64) is done as `scope`.
@@ -27,11 +34,11 @@ An item counts as done only after a run against a real node.
      `0x32` (50) a binary request.
    - `0x33` (51) factory reset, payload the text `reset`: left out on purpose, since it formats
      the node.
-3. **Wi-Fi (TCP) companion**, not wanted for now. Builds with `ENABLE_WIFI_INTERFACE` serve the
+4. **Wi-Fi (TCP) companion**, not wanted for now. Builds with `ENABLE_WIFI_INTERFACE` serve the
    same `<`/`>` framed protocol on a TCP port (default 5000, per the firmware source). With the
    transport interface in place it is small: `-tcp=host:port`, a transport over `net.Conn`,
    reusing `frameReader` and `frameForNode`.
-4. **Buzzer.** Document the button gesture in the README (a triple click flips it on the T1000-E,
+5. **Buzzer.** Document the button gesture in the README (a triple click flips it on the T1000-E,
    still to confirm on the device). Nothing more is possible until the firmware has a command
    (see the findings below).
 
