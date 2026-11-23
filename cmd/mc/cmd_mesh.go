@@ -26,7 +26,6 @@ func init() {
 		&command{"messages", "Messages", "[-listen DURATION]", "print waiting messages, and with -listen the new ones as they arrive", cmdMessages},
 		&command{"dm", "Messages", "CONTACT TEXT...", "send a direct message and wait for the acknowledgement", cmdDM},
 		&command{"send", "Messages", "CHANNEL TEXT...", "send a message on a channel (name or slot number)", cmdSend},
-		&command{"healthcheck", "Messages", "[-wait DURATION] CODE", "send CODE on #healthcheck; with -wait, wait for it to be echoed", cmdHealthcheck},
 		&command{"contacts", "Contacts and channels", "[-sort name|advert|type|distance] [-miles] [-max-age AGE] [-match TEXT] [-full] [TYPES]", "list the contacts: filter by type, name or age, sort them", cmdContacts},
 		&command{"contact", "Contacts and channels", "remove NAME | add [-type TYPE] KEY NAME...", "remove a contact from the node, or add one by its key", cmdContact},
 		&command{"channels", "Contacts and channels", "", "list the channels", cmdChannels},
@@ -268,28 +267,6 @@ func cmdSend(s *session, args []string) int {
 	}
 	fmt.Println("OK:", summarizeReplies(matched))
 	return exitOK
-}
-
-func cmdHealthcheck(s *session, args []string) int {
-	fs := newFlags("healthcheck", "[-wait DURATION] CODE")
-	wait := fs.Duration("wait", 0, "after sending, wait this long for the code to appear on #healthcheck; fail if it does not")
-	rest, code, ok := parseFlags(fs, args)
-	if !ok {
-		return code
-	}
-	if len(rest) != 1 {
-		return usageError(fs, "wants one code")
-	}
-	l := s.companion()
-	if l == nil {
-		return exitFail
-	}
-	ch, err := findChannel(l, "#healthcheck")
-	if err != nil {
-		fmt.Println("channel #healthcheck not found on the device")
-		return exitFail
-	}
-	return runHealthcheck(l, []*meshgore.Channel{ch}, rest[0], *wait, messagePrinter(s, l, nil))
 }
 
 func cmdContacts(s *session, args []string) int {

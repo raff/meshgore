@@ -7,10 +7,16 @@ An item counts as done only after a run against a real node.
 
 ## To build
 
-1. **Healthcheck delivery without an echo.** `healthcheck -wait` works only if another node
-   repeats the code (it does between the T1000-E and the T-Deck). Radio log pushes (`0x88`)
-   might show repeaters rebroadcasting our packet; the doc gives no layout, so work it out from
-   real frames first.
+1. **Delivery without an echo.** `send -wait` works only if another node answers or repeats the
+   message (the `#test` bots do; the observers of a healthcheck do not). The node can see its own
+   message coming back when a nearby repeater rebroadcasts it: in the radio log pushes (`0x88`: SNR*4,
+   RSSI, then the raw packet) a `GRP_TXT` packet (type 5) appears about a second after the send, one
+   hop long, with the repeater's hash in the path. Seen so far, from real frames: the payload starts
+   with the channel hash (the first byte of SHA-256 of the channel secret; `d9` for `#test`), then a
+   2-byte MAC and the ciphertext, and the last cipher block was the same in every capture of the same
+   text. To build: match our own packet (decrypt with the channel secret, `HashtagSecret` for a `#`
+   channel, or compare the blocks) and make `send -wait` report "repeated by 82 (1 hop, +14 dB)", so
+   a silent run tells "never left the node" from "nobody answered". Also useful for a healthcheck.
 2. **Companion commands not used yet.** From the firmware's command list; `meshcore_py` uses the
    same numbers. Layouts are not checked, so confirm them in the firmware source before building:
    - `0x36` (54) a flood scope key for the next sends, in RAM only (a per-send override of the default
@@ -105,7 +111,7 @@ Not available on a companion:
 - **`get lat|lon|repeat|public.key`, `neighbors`, `gps`, `clock`**: the companion CLI answers
   `Unknown command`; the dedicated commands replace them.
 - Repeater only by nature: `password`, `setperm`, `region`, `log`, `clear stats`, `powersaving`.
-- Companion only by nature: messages, channels, contacts, `dm`, `healthcheck`.
+- Companion only by nature: messages, channels, contacts, `dm`, `send`.
 
 Safe mode: `get <setting>` (one argument) is allowed on the companion too, so `get tz.offset` works
 without `-safe=false`; `set` and `reboot` need it.
@@ -194,7 +200,7 @@ Measured with the repeater indoors, then outside (not very high):
 - Everything heard was a plain (unscoped) flood, so a scope requirement does not look like the cause.
   The Bay Area healthcheck site refuses automated fetches (403), so what its observers require is
   unconfirmed.
-- **Result:** with the repeater outside, a fresh code sent with `mc healthcheck` from the T1000-E was
+- **Result:** with the repeater outside, a fresh code sent with `mc healthcheck` (now `send #healthcheck`) from the T1000-E was
   reported by the observers. So the cause was range, not scope or a setting, and no region or
   default scope was needed. (The companion sends through its repeater; neither is high up yet.)
 - Region scope, from the MeshCore blog (Jan and Apr 2026): repeaters since v1.10.0 do not forward a
@@ -218,7 +224,7 @@ Measured with the repeater indoors, then outside (not very high):
   (`verbose on|off` in the REPL turns frame logging on)
 - `scope`: the default flood scope (a region name and its key, SHA-256 of `#`+name)
 - Direct messages with acknowledgement, retry and path reset; `send` (refuses over 133 bytes);
-  `healthcheck`; the contact
+  `healthcheck` (now an alias for `send`); the contact
   list with type, name and age filters, sorting and JSON
 - Node settings: `set name|position|share-location|multi-acks`, `radio`, `tuning`, `clock`, `gps`,
   `advert`, `auto-add`, `path-hash`; `discover`, `contact remove`, `channel add|remove`

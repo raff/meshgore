@@ -148,60 +148,6 @@ func runRepeater(ctx context.Context, l *meshgore.Link, o repeaterOpts) int {
 	return code
 }
 
-// runHealthcheck sends code on #healthcheck. With wait > 0 it then waits for a
-// message on that channel containing the code (an echo or reply from another
-// node) and reports whether one arrived. It returns the exit code.
-func runHealthcheck(l *meshgore.Link, channels []*meshgore.Channel, code string, wait time.Duration, printMessages func() []*meshgore.Message) int {
-	client := l.Client
-	waiting := l.Subscribe(meshgore.PushMsgWaiting) // before sending: the echo may come back at once
-	defer waiting.Close()
-
-	var hc *meshgore.Channel
-	for _, ch := range channels {
-		if strings.EqualFold(ch.Name, "#healthcheck") {
-			hc = ch
-			break
-		}
-	}
-	if hc == nil {
-		fmt.Println("channel #healthcheck not found on the device")
-		return 1
-	}
-	tag, flood, err := client.SendChannelMessage(hc.Index, code)
-	if err != nil {
-		fmt.Println(err)
-		return 1
-	}
-	fmt.Printf("Sent %q on %s [%d]", code, hc.Name, hc.Index)
-	if tag != 0 { // only MSG_SENT replies carry a tag; a plain OK does not
-		fmt.Printf(" (ack tag %08x, flood=%v)", tag, flood)
-	}
-	fmt.Println()
-	if wait == 0 {
-		return 0
-	}
-
-	fmt.Printf("Waiting up to %s for %q to appear on %s...\n", wait, code, hc.Name)
-	deadline := time.After(wait)
-	poll := time.NewTicker(5 * time.Second) // in case a messages-waiting push is missed
-	defer poll.Stop()
-	for {
-		select {
-		case <-waiting.C:
-		case <-poll.C:
-		case <-deadline:
-			fmt.Println("healthcheck FAILED: not seen before timeout")
-			return 1
-		}
-		for _, msg := range printMessages() {
-			if msg.Channel && msg.ChannelIdx == hc.Index && strings.Contains(msg.Text, code) {
-				fmt.Println("healthcheck OK")
-				return 0
-			}
-		}
-	}
-}
-
 // channelWait says what to listen for on a channel after sending to it.
 type channelWait struct {
 	idx   int

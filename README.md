@@ -195,44 +195,43 @@ With `-json` the list is `{"total": N, "contacts": [{"name", "type", "key", "las
 Messages are printed as `[time] channel: sender: text`; direct messages show the
 sender's name when it is in the contact cache (`contacts` fills it) and the key prefix if not.
 
-### Send a healthcheck
+### Send a message
 
 ```
-./mc -name=MyNode healthcheck MHC-1234
-./mc -name=MyNode healthcheck -wait=60s MHC-1234
+./mc -name=MyNode send '#healthcheck' MHC-1234
+./mc -name=MyNode send 1 "hello"                 # a channel by slot number
 ```
 
-Sends the code as a message on the channel named `#healthcheck` and exits.
-With `-wait`, it then waits for a message containing the code to
-appear on that channel and exits 1 if none does. That only works if something
-else repeats the code back: a node never receives its own channel message and
-channel messages have no acknowledgement. `send CHANNEL TEXT...` sends any text on
-any channel (by name or slot). A channel message holds at most 133 bytes (the node adds your name
-in front); a longer one is refused instead of being cut off silently. Direct messages have no
-limit enforced, since theirs is not confirmed.
+`send CHANNEL TEXT...` sends text on a channel, by name or by slot number, and exits. A node never
+receives its own channel message and channel messages have no acknowledgement, so a plain `send`
+only tells you that the node accepted it. A channel message holds at most 133 bytes (the node adds
+your name in front); a longer one is refused instead of being cut off silently. Direct messages have
+no limit enforced, since theirs is not confirmed. For a healthcheck, `send` the code on `#healthcheck`
+and look it up on the healthcheck page; see "Aliases" below for a `healthcheck` shortcut.
 
 ### Send and wait for the answers
 
 ```
-./mc -name=MyNode send -wait 20s -only '#test' test         # who answers a test?
-./mc -name=MyNode send -wait 60s -first -match MHC-1 '#healthcheck' MHC-1
+./mc -name=MyNode send -wait 45s -only -match '$node' '#test' test    # who answers a test?
 ```
 
 `send -wait DURATION` sends, then listens on the same channel for that long and ends with
 `OK: 5 matching message(s) from A, B, ...`, or `FAILED` (exit 1) if nothing came. `-match TEXT`
 only counts messages containing TEXT (any case; `-match '$node'` is this node's own name, to see just the answers that mention you), `-first` stops at the first one, and `-only`
 hides the other messages that arrive meanwhile (it says how many; they are read from the node,
-not kept). `send -wait -first -match CODE` is `healthcheck -wait` for any channel.
+not kept). It needs something to answer: the bots on a `#test` channel do, but the observers of a
+healthcheck only listen, so a healthcheck is sent without `-wait`. The bots may answer a sender only
+once in a while (10 to 15 minutes looked right), so a test sent twice in a row can come back empty.
 
 ### Aliases
 
 ```
 ./mc alias test = send -wait 45s -only -match '$node' '#test' test
-./mc alias hc 'send -wait 60s -first -match $1 #healthcheck $1'
+./mc alias healthcheck 'send #healthcheck $1'
 ./mc alias                  # list them
-./mc alias -d hc            # remove one
+./mc alias -d healthcheck   # remove one
 ./mc -name=MyNode test
-./mc -name=MyNode hc MHC-1234
+./mc -name=MyNode healthcheck MHC-1234
 ```
 
 An alias names a command line. They are kept in `mc/aliases` in your config directory (on macOS,
@@ -243,6 +242,15 @@ name of the node mc is connected to, as other nodes see it, so `-match $node` ke
 answers that mention you; mc connects to look it up when an alias uses it. Commands are chained with `;`
 and stop at the first one that fails. An alias cannot replace a built-in command or use another alias.
 Nothing is defined by default. Aliases work in the interactive session too, and complete there.
+In a shell, quote the definition so that the shell does not expand `$1` or `$node`.
+
+The two used most, for the Bay Area mesh (the channels must be on the node: `channel add '#test'`
+and `channel add '#healthcheck'`):
+
+| alias | definition | use |
+| --- | --- | --- |
+| `test` | `send -wait 45s -only -match $node #test test` | send `test` on `#test`, then list the nodes that answered you (exit 1 if none) |
+| `healthcheck` | `send #healthcheck $1` | send a healthcheck code: `healthcheck MHC-1234` |
 
 ### Set up a fresh node
 
@@ -620,7 +628,7 @@ Options come before the command.
 | --- | --- |
 | `info`, `vars`, `status`, `watch`, `telemetry` | look at the node |
 | `clock`, `radio`, `tuning`, `gps`, `advert`, `set`, `auto-add`, `path-hash`, `scope` | read or change its settings |
-| `messages`, `dm`, `send`, `healthcheck` | messages |
+| `messages`, `dm`, `send`, `alias` | messages, and names for command lines |
 | `contacts`, `contact`, `channels`, `channel` | contacts and channels |
 | `adverts`, `discover`, `path`, `repeater`, `cli` | the network, the route to a contact, a repeater, a CLI command on the node |
 | `scan`, `ports`, `help`, `repl` | find nodes, list serial ports, help, an interactive session |
