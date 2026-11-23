@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -105,5 +106,41 @@ func TestSummarizeReplies(t *testing.T) {
 	}
 	if got := summarizeReplies([]*meshgore.Message{chanMsg(1, "plain")}); got != "1 matching message(s)" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestFindChannelIn(t *testing.T) {
+	slots := map[int]string{0: "Public", 1: "#test", 5: "#Healthcheck"}
+	reads := 0
+	get := func(i int) (*meshgore.Channel, error) {
+		reads++
+		return &meshgore.Channel{Index: i, Name: slots[i]}, nil
+	}
+	for _, tc := range []struct {
+		spec      string
+		want      int // slot, or -1 for an error
+		wantReads int
+	}{
+		{"1", 1, 1},            // a number reads one slot
+		{"#test", 1, 2},        // a name stops at the slot that has it
+		{"#healthcheck", 5, 6}, // any case
+		{"#nothing", -1, 40},   // not found: every slot was looked at
+		{"3", -1, 41},          // an empty slot number falls back to the names, so 1 + 40 reads
+		{"99", -1, 40},         // out of range: names only
+	} {
+		reads = 0
+		ch, err := findChannelIn(tc.spec, 40, get)
+		switch {
+		case tc.want < 0 && err == nil:
+			t.Errorf("%q: found slot %d, want an error", tc.spec, ch.Index)
+		case tc.want >= 0 && (err != nil || ch.Index != tc.want):
+			t.Errorf("%q: %v, %v; want slot %d", tc.spec, ch, err, tc.want)
+		}
+		if reads != tc.wantReads {
+			t.Errorf("%q: %d slot reads, want %d", tc.spec, reads, tc.wantReads)
+		}
+	}
+	if _, err := findChannelIn("#test", 40, func(int) (*meshgore.Channel, error) { return nil, errors.New("link down") }); err == nil || err.Error() != "link down" {
+		t.Errorf("read error: %v", err)
 	}
 }

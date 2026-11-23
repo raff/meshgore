@@ -157,13 +157,31 @@ func cmdDM(s *session, args []string) int {
 
 // findChannel resolves a channel given as a slot number or a name.
 func findChannel(l *meshgore.Link, spec string) (*meshgore.Channel, error) {
-	chans, err := l.Client.Channels()
-	if err != nil {
-		return nil, err
+	max := 0
+	if l.Client.Info != nil {
+		max = l.Client.Info.MaxChannels
 	}
-	n, numeric := strconv.Atoi(spec)
-	for _, ch := range chans {
-		if (numeric == nil && ch.Index == n) || strings.EqualFold(ch.Name, spec) {
+	return findChannelIn(spec, max, l.Client.GetChannel) // l.Client changes on reconnect
+}
+
+// findChannelIn finds a channel by slot number or by name (any case), reading as few
+// slots as it can: a number reads one, a name reads up to the first slot that has it.
+func findChannelIn(spec string, max int, get func(int) (*meshgore.Channel, error)) (*meshgore.Channel, error) {
+	if n, err := strconv.Atoi(spec); err == nil && n >= 0 && n < max {
+		ch, err := get(n)
+		if err != nil {
+			return nil, err
+		}
+		if !ch.Empty() {
+			return ch, nil
+		}
+	}
+	for i := 0; i < max; i++ {
+		ch, err := get(i)
+		if err != nil {
+			return nil, err
+		}
+		if !ch.Empty() && strings.EqualFold(ch.Name, spec) {
 			return ch, nil
 		}
 	}
@@ -266,12 +284,12 @@ func cmdHealthcheck(s *session, args []string) int {
 	if l == nil {
 		return exitFail
 	}
-	chans, err := l.Client.Channels()
+	ch, err := findChannel(l, "#healthcheck")
 	if err != nil {
-		fmt.Println("error:", err)
+		fmt.Println("channel #healthcheck not found on the device")
 		return exitFail
 	}
-	return runHealthcheck(l, chans, rest[0], *wait, messagePrinter(s, l, nil))
+	return runHealthcheck(l, []*meshgore.Channel{ch}, rest[0], *wait, messagePrinter(s, l, nil))
 }
 
 func cmdContacts(s *session, args []string) int {
