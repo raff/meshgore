@@ -336,8 +336,11 @@ Replies from `get` start with `> `.
   A chat contact gets no login unless `-password` is given.
   Reaching it at all, with a path printed, is also a check that the repeater is up and in range.
 - `discover` sends a one-hop request and lists the nodes that answer, with the SNR each
-  heard the other at. Names come from the contact cache. Repeaters answer at most 4 times in
-  2 minutes, so repeat it sparingly.
+  heard the other at. Names come from the contact cache and the node's own contact list; a node
+  that is not a contact shows as `(unknown)`. `-save` saves those as contacts named
+  `TYPE-KEYPREFIX` (when the reply has the full key), so `repeater` and `path` can reach them; its
+  next advert brings the real name. Repeaters answer at most 4 times in 2 minutes, so repeat it
+  sparingly.
 - `adverts` listens for `-wait` (default 60s) and prints each node it hears, with its name, type
   and full public key, marked as a contact or not. This is how to find the key of a sender seen
   on a channel: a channel message carries only the sender's name, never its key. `-advert` sends a

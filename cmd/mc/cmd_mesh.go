@@ -437,14 +437,15 @@ func cmdChannel(s *session, args []string) int {
 }
 
 func cmdDiscover(s *session, args []string) int {
-	fs := newFlags("discover", "[-wait DURATION] [all|chat,repeater,room,sensor]")
+	fs := newFlags("discover", "[-wait DURATION] [-save] [all|chat,repeater,room,sensor]")
 	wait := fs.Duration("wait", 8*time.Second, "how long to collect answers")
+	save := fs.Bool("save", false, "save the nodes that are not contacts, named type-KEYPREFIX, so repeater and path can reach them")
 	rest, code, ok := parseFlags(fs, args)
 	if !ok {
 		return code
 	}
 	a := newActions(s)
-	a.discover, a.discoverWait = "all", *wait
+	a.discover, a.discoverWait, a.discoverSave = "all", *wait, *save
 	if len(rest) == 1 {
 		a.discover = rest[0]
 	} else if len(rest) > 1 {
@@ -702,6 +703,17 @@ func cmdAdverts(s *session, args []string) int {
 	if cached, _ := loadContactCache(s.node()); cached != nil {
 		for _, ct := range cached {
 			names[ct.PublicKey] = ct.Name
+		}
+	}
+	// The cache is empty or stale after the node was reset or reflashed, so
+	// also take the names from the node's own contact list.
+	if live, err := c.GetContacts(); err != nil {
+		fmt.Println("warning: could not read the node's contacts for names:", err)
+	} else {
+		for _, ct := range live {
+			if ct.Name != "" {
+				names[ct.PublicKey] = ct.Name
+			}
 		}
 	}
 	fmt.Printf("Listening for adverts (%s)...\n", *wait)

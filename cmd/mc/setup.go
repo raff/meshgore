@@ -44,6 +44,7 @@ type nodeActions struct {
 	pathHash      string // 0..2
 	discover      string // node types to look for
 	discoverWait  time.Duration
+	discoverSave  bool // save the answers that are not contacts
 	removeContact string
 	removeChannel string
 }
@@ -565,16 +566,43 @@ func runDiscover(ctx context.Context, c *meshgore.Client, a nodeActions, types b
 			names[string(ct.PublicKey[:8])] = ct.Name
 		}
 	}
+	// The cache is empty after a reset; the node's own contact list has the names.
+	if live, err := c.GetContacts(); err != nil {
+		fmt.Println("warning: could not read the node's contacts for names:", err)
+	} else {
+		for _, ct := range live {
+			if ct.Name != "" {
+				names[string(ct.PublicKey[:8])] = ct.Name
+			}
+		}
+	}
 	if len(ns) == 0 {
 		fmt.Println("No answer. A repeater answers a discovery request at most 4 times in 2 minutes.")
 	}
 	for _, n := range ns {
+		typeName := map[int]string{1: "chat", 2: "repeater", 3: "room", 4: "sensor"}[n.Type]
 		name := names[string(n.Key[:8])]
+		note := ""
 		if name == "" {
 			name = "(unknown)"
+			switch {
+			case !a.discoverSave:
+			case len(n.Key) != 32:
+				note = "  (not saved: the reply has only a key prefix)"
+			case typeName == "":
+				note = "  (not saved: unknown node type)"
+			default:
+				ct := &meshgore.Contact{Type: byte(n.Type), Name: fmt.Sprintf("%s-%x", typeName, n.Key[:3]), LastAdvert: time.Now()}
+				copy(ct.PublicKey[:], n.Key)
+				if err := c.AddContact(ct); err != nil {
+					note = "  (not saved: " + err.Error() + ")"
+				} else {
+					name, note = ct.Name, "  [saved as a contact]"
+				}
+			}
 		}
-		fmt.Printf("  %-24s %-8s key %x  heard us %+.2f dB, we heard it %+.2f dB (RSSI %.0f)\n",
-			name, map[int]string{1: "chat", 2: "repeater", 3: "room", 4: "sensor"}[n.Type], n.Key[:6], n.TheirSNR, n.SNR, n.RSSI)
+		fmt.Printf("  %-24s %-8s key %x  heard us %+.2f dB, we heard it %+.2f dB (RSSI %.0f)%s\n",
+			name, typeName, n.Key[:6], n.TheirSNR, n.SNR, n.RSSI, note)
 	}
 	return exitOK
 }
