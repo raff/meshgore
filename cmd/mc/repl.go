@@ -43,8 +43,9 @@ type repl struct {
 
 // repeaterMode is a session logged in to a repeater.
 type repeaterMode struct {
-	ct      *meshgore.Contact
-	timeout time.Duration
+	ct       *meshgore.Contact
+	timeout  time.Duration
+	prevSafe bool // the safe setting when the session began, restored when it ends
 }
 
 func cmdREPL(s *session, args []string) int {
@@ -439,7 +440,7 @@ func (r *repl) enterRepeater(args []string) (handled, ok bool) {
 	}
 	fmt.Println("Logged in. Type its commands; status, telemetry, safe, exit.")
 	r.mu.Lock()
-	r.rep = &repeaterMode{ct: ct, timeout: timeout}
+	r.rep = &repeaterMode{ct: ct, timeout: timeout, prevSafe: r.s.g.safe}
 	r.mu.Unlock()
 	r.useHistory("history-repeater")
 	return true, true
@@ -606,6 +607,11 @@ func (r *repl) leaveRepeater() {
 		l.Client.Logout(rep.ct.PublicKey)
 	}
 	fmt.Println("Logged out.")
+	if r.s.g.safe != rep.prevSafe {
+		// "safe off" typed inside the session must not outlive it
+		r.s.g.safe = rep.prevSafe
+		fmt.Printf("safe mode is %s again\n", map[bool]string{true: "on", false: "off"}[rep.prevSafe])
+	}
 	r.useHistory("history")
 	r.catchUp()
 }
