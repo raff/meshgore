@@ -104,7 +104,7 @@ func (c *Client) onNotify(buf []byte) {
 	}
 	frame := append([]byte(nil), buf...) // the callback's buffer may be reused
 	if Debug {
-		logf("<- % x", frame)
+		logFrame("<-", frame)
 	}
 	if frame[0] >= 0x80 {
 		c.hub.publish(frame)
@@ -129,7 +129,7 @@ func (c *Client) exchange(cmd []byte, handle func(f []byte) (done bool, err erro
 	}
 
 	if Debug {
-		logf("-> % x", cmd)
+		logFrame("->", cmd)
 	}
 	if err := c.write(cmd); err != nil {
 		// CoreBluetooth sometimes never confirms a write that the device did
