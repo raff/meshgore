@@ -672,6 +672,9 @@ func completeLine(line, node string) []string {
 			cands = append(cands, c.name)
 		}
 		cands = append(cands, "exit", "safe", "verbose")
+		for name := range loadAliases() {
+			cands = append(cands, name)
+		}
 	case index != 1:
 		// only the first word after the command has a fixed set of choices
 	case cmd == "help":

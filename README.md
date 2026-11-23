@@ -211,6 +211,39 @@ any channel (by name or slot). A channel message holds at most 133 bytes (the no
 in front); a longer one is refused instead of being cut off silently. Direct messages have no
 limit enforced, since theirs is not confirmed.
 
+### Send and wait for the answers
+
+```
+./mc -name=MyNode send -wait 20s -only '#test' test         # who answers a test?
+./mc -name=MyNode send -wait 60s -first -match MHC-1 '#healthcheck' MHC-1
+```
+
+`send -wait DURATION` sends, then listens on the same channel for that long and ends with
+`OK: 5 matching message(s) from A, B, ...`, or `FAILED` (exit 1) if nothing came. `-match TEXT`
+only counts messages containing TEXT (any case; `-match '$node'` is this node's own name, to see just the answers that mention you), `-first` stops at the first one, and `-only`
+hides the other messages that arrive meanwhile (it says how many; they are read from the node,
+not kept). `send -wait -first -match CODE` is `healthcheck -wait` for any channel.
+
+### Aliases
+
+```
+./mc alias test = send -wait 45s -only -match '$node' '#test' test
+./mc alias hc 'send -wait 60s -first -match $1 #healthcheck $1'
+./mc alias                  # list them
+./mc alias -d hc            # remove one
+./mc -name=MyNode test
+./mc -name=MyNode hc MHC-1234
+```
+
+An alias names a command line. They are kept in `mc/aliases` in your config directory (on macOS,
+`~/Library/Application Support/mc/aliases`), one `name = commands` per line, so you can also edit
+the file. `$1`..`$9` and `$*` stand for the words typed after the alias; with none in the
+definition, the words are added to the end of the last command. `$node` (or `$nodename`) is the
+name of the node mc is connected to, as other nodes see it, so `-match $node` keeps only the
+answers that mention you; mc connects to look it up when an alias uses it. Commands are chained with `;`
+and stop at the first one that fails. An alias cannot replace a built-in command or use another alias.
+Nothing is defined by default. Aliases work in the interactive session too, and complete there.
+
 ### Set up a fresh node
 
 A reflashed node has no name, no position and none of your channels:

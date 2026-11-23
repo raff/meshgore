@@ -171,7 +171,11 @@ func findChannel(l *meshgore.Link, spec string) (*meshgore.Channel, error) {
 }
 
 func cmdSend(s *session, args []string) int {
-	fs := newFlags("send", "CHANNEL TEXT...")
+	fs := newFlags("send", "[-wait DURATION [-match TEXT] [-first] [-only]] CHANNEL TEXT...")
+	wait := fs.Duration("wait", 0, "after sending, listen this long for messages on the channel; fail if none (matching) arrives")
+	match := fs.String("match", "", "with -wait: only messages containing TEXT (any case) count as answers; $node is this node's name")
+	first := fs.Bool("first", false, "with -wait: stop at the first answer")
+	only := fs.Bool("only", false, "with -wait: do not show messages that are not answers (they are counted, and read from the node)")
 	rest, code, ok := parseFlags(fs, args)
 	if !ok {
 		return code
@@ -179,20 +183,72 @@ func cmdSend(s *session, args []string) int {
 	if len(rest) < 2 {
 		return usageError(fs, "wants a channel and the text")
 	}
+	if *wait <= 0 && (*match != "" || *first || *only) {
+		return usageError(fs, "-match, -first and -only need -wait")
+	}
 	l := s.companion()
 	if l == nil {
 		return exitFail
+	}
+	if *match == "$node" || *match == "$nodename" {
+		*match = ownName(l)
 	}
 	ch, err := findChannel(l, rest[0])
 	if err != nil {
 		fmt.Println("error:", err)
 		return exitFail
 	}
+	if *wait <= 0 {
+		if _, _, err := l.Client.SendChannelMessage(ch.Index, strings.Join(rest[1:], " ")); err != nil {
+			fmt.Println("error:", err)
+			return exitFail
+		}
+		fmt.Printf("Sent on %s [%d]\n", ch.Name, ch.Index)
+		return exitOK
+	}
+
+	// Subscribe before sending, so a quick answer is not missed, and empty the queue
+	// first, so an old message is not taken for an answer.
+	waiting := l.Subscribe(meshgore.PushMsgWaiting)
+	defer waiting.Close()
+	messagePrinter(s, l, nil)()
 	if _, _, err := l.Client.SendChannelMessage(ch.Index, strings.Join(rest[1:], " ")); err != nil {
 		fmt.Println("error:", err)
 		return exitFail
 	}
-	fmt.Printf("Sent on %s [%d]\n", ch.Name, ch.Index)
+	fmt.Printf("Sent on %s [%d]; listening for %s...\n", ch.Name, ch.Index, *wait)
+	format := messageFormatter(s.node(), l)
+	hidden, unmatched := 0, 0 // other messages; messages on this channel that did not match
+	matched := collectChannel(s.ctx, waiting.C, 2*time.Second,
+		func() ([]*meshgore.Message, error) { return l.Client.SyncMessages() }, // l.Client changes on reconnect
+		channelWait{idx: ch.Index, wait: *wait, match: *match, first: *first},
+		func(m *meshgore.Message) { fmt.Println(format(m)) },
+		func(m *meshgore.Message) {
+			if m.Channel && m.ChannelIdx == ch.Index {
+				unmatched++
+			}
+			if *only {
+				hidden++
+			} else {
+				fmt.Println(format(m))
+			}
+		})
+	if hidden > 0 {
+		fmt.Printf("(%d other message(s) not shown)\n", hidden)
+	}
+	if len(matched) == 0 {
+		what := "answered"
+		if *match != "" {
+			what = fmt.Sprintf("contained %q", *match)
+		}
+		fmt.Printf("FAILED: nothing %s on %s within %s", what, ch.Name, *wait)
+		if unmatched > 0 {
+			fmt.Printf(" (%d message(s) arrived on it but did not match)", unmatched)
+		}
+		fmt.Println()
+		return exitFail
+	}
+	fmt.Println("OK:", summarizeReplies(matched))
 	return exitOK
 }
 

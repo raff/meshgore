@@ -42,6 +42,9 @@ func runLine(s *session, args []string) int {
 	}
 	c := lookup(args[0])
 	if c == nil {
+		if def, ok := loadAliases()[args[0]]; ok {
+			return runAlias(s, args[0], def, args[1:])
+		}
 		fmt.Fprintf(os.Stderr, "mc: unknown command %q (try \"mc help\")\n", args[0])
 		return exitUsage
 	}

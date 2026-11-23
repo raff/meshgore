@@ -51,7 +51,7 @@ func main() {
 	if !g.json && !g.console && interactive() {
 		args = bareRepeaterToREPL(args)
 	}
-	if lookup(args[0]) == nil {
+	if _, isAlias := loadAliases()[args[0]]; lookup(args[0]) == nil && !isAlias {
 		fmt.Fprintf(os.Stderr, "mc: unknown command %q\n\n", args[0])
 		usage()
 		os.Exit(exitUsage)

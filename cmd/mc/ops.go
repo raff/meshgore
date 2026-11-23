@@ -202,6 +202,86 @@ func runHealthcheck(l *meshgore.Link, channels []*meshgore.Channel, code string,
 	}
 }
 
+// channelWait says what to listen for on a channel after sending to it.
+type channelWait struct {
+	idx   int
+	wait  time.Duration
+	match string // a message on the channel counts when its text contains this, in any case; "" counts all
+	first bool   // stop at the first match
+}
+
+// matches says whether msg is one the wait is looking for.
+func (w channelWait) matches(msg *meshgore.Message) bool {
+	return msg.Channel && msg.ChannelIdx == w.idx &&
+		strings.Contains(strings.ToLower(msg.Text), strings.ToLower(w.match))
+}
+
+// collectChannel reads messages (sync drains the node's queue, wake says one is
+// waiting, and poll covers a missed wake) for w.wait, or until the first match with
+// w.first. Matches go to onMatch, everything else to other. A last sync runs when
+// the time is up, so a message that came in at the end is not left in the queue.
+func collectChannel(ctx context.Context, wake <-chan []byte, poll time.Duration, sync func() ([]*meshgore.Message, error),
+	w channelWait, onMatch, other func(*meshgore.Message)) (matched []*meshgore.Message) {
+	deadline := time.After(w.wait)
+	tick := time.NewTicker(poll)
+	defer tick.Stop()
+	over := false
+	for !over {
+		select {
+		case <-wake:
+		case <-tick.C:
+		case <-deadline:
+			over = true
+		case <-ctx.Done():
+			return matched
+		}
+		msgs, err := sync()
+		if err != nil {
+			fmt.Println("message sync:", err)
+		}
+		for i, m := range msgs {
+			if !w.matches(m) {
+				other(m)
+				continue
+			}
+			matched = append(matched, m)
+			onMatch(m)
+			if w.first {
+				for _, rest := range msgs[i+1:] { // not ours to drop
+					other(rest)
+				}
+				return matched
+			}
+		}
+	}
+	return matched
+}
+
+// senderOf returns the name a channel message starts with ("Name: text"), or "".
+func senderOf(text string) string {
+	if i := strings.Index(text, ": "); i > 0 && i <= 40 {
+		return text[:i]
+	}
+	return ""
+}
+
+// summarizeReplies says how many messages matched and who sent them.
+func summarizeReplies(matched []*meshgore.Message) string {
+	var names []string
+	seen := map[string]bool{}
+	for _, m := range matched {
+		if n := senderOf(m.Text); n != "" && !seen[n] {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	out := fmt.Sprintf("%d matching message(s)", len(matched))
+	if len(names) > 0 {
+		out += " from " + strings.Join(names, ", ")
+	}
+	return out
+}
+
 // printNodeInfo prints what the handshake learned about the companion.
 func printNodeInfo(l *meshgore.Link) {
 	s := l.Self
